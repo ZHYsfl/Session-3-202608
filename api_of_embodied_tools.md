@@ -14,11 +14,12 @@
 
 ## 1. 概述
 
-为了方便联调，将上述具身 agent 的四个工具通过本地 RESTful API 网关对外暴露。
+为了方便联调，将 arm agent（具身 agent）的六个工具通过本地 RESTful API 网关对外暴露：2.1–2.4 为上述四个具身执行工具，2.5–2.6 为异步双 agent 系统的跨 agent 通信工具（生产/消费，设计原理见 `async_dual_agent_system_design.md`）。
 
 - 服务地址（Base URL）：`http://127.0.0.1:8000`
 - 协议：HTTP + JSON（`Content-Type: application/json; charset=utf-8`）
 - 所有接口均为同步阻塞调用：工具内部执行完毕后才返回响应，联调方无需轮询。
+- 与语音工具网关（`http://127.0.0.1:8001`，见 `api_of_voice_tools.md`）对接**同一个队列后端**（见 §3 队列与状态栏约定）。
 
 ### 通用响应结构
 
@@ -202,7 +203,85 @@ curl -X POST http://127.0.0.1:8000/api/v1/release_the_block
 
 ---
 
-## 3. 接口汇总
+### 2.5 生产消息给 Voice Agent（send_to_voice_agent）
+
+- **接口说明**：对应工具 `send_to_voice_agent(content: str) -> str`。把一条消息追加到 `message_from_arm_agent_queue` 队尾，供 voice agent 消费后语音转述给人。arm agent 不直接对人输出，进度汇报、任务完成、异常求助（如 `release_the_block` 失败后请人用手取出）都通过本工具上报。
+- **URL**：`POST /api/v1/send_to_voice_agent`
+- **输入**：JSON 请求体，字段如下。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `content` | string | 是 | 要发送给 voice agent 的消息全文，自然语言，如 `已到达目标位置 (1.0,2.0,3.0) 并成功释放物块，任务完成。` |
+
+- **输出**（HTTP 200）：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `code` | int | 固定为 `0`。 |
+| `result` | string | 固定为 `发送成功`。 |
+| `error` | null | 固定为 `null`。 |
+
+- **调用示例**：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/send_to_voice_agent \
+  -H "Content-Type: application/json" \
+  -d '{"content": "已到达目标位置 (1.0,2.0,3.0) 并成功释放物块，任务完成。"}'
+```
+
+```json
+{
+  "code": 0,
+  "result": "发送成功",
+  "error": null
+}
+```
+
+---
+
+### 2.6 消费来自 Voice Agent 的消息（get_message_from_voice_agent）
+
+- **接口说明**：对应工具 `get_message_from_voice_agent() -> str`。排空 `message_from_voice_agent_queue`，把 voice agent 转发的任务下发/变更/取消等全部消息一次性取出。**调用时机**（pics/4.png 左下角修正后的机制）：
+  1. arm agent **空闲时**：由编排层触发本工具自动消费，新任务由此进入上下文。
+  2. arm agent **忙碌时**（工具调用循环中）：编排层在每条 tool response 消息后追加一条 role 为 user、内容为 `<queue_status>empty/not empty</queue_status>` 的状态栏消息，然后让 LLM 继续推理；arm agent 看到 `not empty` 时调用本工具主动消费，从而在任务执行中途感知新指令。
+- **URL**：`POST /api/v1/get_message_from_voice_agent`
+- **输入**：无请求参数，无请求体。
+- **输出**（HTTP 200）：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `code` | int | 固定为 `0`。 |
+| `result` | string | 队列非空时为 `all_messages_from_voice_agent:消息1;消息2;...`（多条消息按入队顺序以英文分号 `;` 拼接）；队列为空时固定为 `当前没有新消息`。 |
+| `error` | null | 固定为 `null`。 |
+
+- **调用示例**：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/get_message_from_voice_agent
+```
+
+```json
+{
+  "code": 0,
+  "result": "all_messages_from_voice_agent:用户改主意了，请改抓 yellow 物块;目标位置不变",
+  "error": null
+}
+```
+
+---
+
+## 3. 队列与状态栏约定
+
+- 系统有两条 FIFO 队列，由编排运行时持有，两个工具网关（8000/8001）对接同一后端：
+  - `message_from_voice_agent_queue`（voice → arm 方向）：语音网关的 `send_to_arm_agent` 生产，本网关的 `get_message_from_voice_agent` 消费。
+  - `message_from_arm_agent_queue`（arm → voice 方向）：本网关的 `send_to_voice_agent` 生产，语音网关的 `get_message_from_arm_agent` 消费。
+- **状态栏注入（编排层职责，非工具）**：arm agent 忙碌时，每条 tool response 消息之后追加一条 role=user、内容为 `<queue_status>empty/not empty</queue_status>` 的消息，反映 `message_from_voice_agent_queue` 当时是否非空，随后让 LLM 继续推理。
+- **消费结果的消息形式**：`get_message_from_voice_agent` 的返回字符串以一条 user 消息进入上下文，形如 `all_messages_from_voice_agent:...`。
+- 人优先原则：队列消息只能通过"状态栏感知 + 主动消费"进入上下文，不得直接插队打断当前推理。
+
+---
+
+## 4. 接口汇总
 
 | 工具 | 方法 | 路径 | 输入 | 业务结果字段 |
 | --- | --- | --- | --- | --- |
@@ -210,3 +289,5 @@ curl -X POST http://127.0.0.1:8000/api/v1/release_the_block
 | `move_to_coordinates` | POST | `/api/v1/move_to_coordinates` | `x` / `y` / `z`（string，必填） | `result` |
 | `grab_the_block` | POST | `/api/v1/grab_the_block` | `color`（string，必填） | `result` |
 | `release_the_block` | POST | `/api/v1/release_the_block` | 无 | `result` |
+| `send_to_voice_agent` | POST | `/api/v1/send_to_voice_agent` | `content`（string，必填） | `result` = `发送成功` |
+| `get_message_from_voice_agent` | POST | `/api/v1/get_message_from_voice_agent` | 无 | `result` = `all_messages_from_voice_agent:...` / `当前没有新消息` |
