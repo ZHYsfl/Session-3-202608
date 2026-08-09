@@ -77,7 +77,7 @@ curl -X POST http://127.0.0.1:8001/api/v1/send_to_arm_agent \
 
 ### 2.2 消费来自 Arm Agent 的消息（get_message_from_arm_agent）
 
-- **接口说明**：对应工具 `get_message_from_arm_agent() -> str`。排空 `message_from_arm_agent_queue`，把 arm agent 上报的进度/结果/求助等全部消息一次性取出。**调用时机**：编排层随每条人类 user 消息注入 `<queue_status>empty/not empty</queue_status>` 状态栏，voice agent 仅在状态为 `not empty` 时调用本工具主动消费；消费结果作为 user 消息进入上下文后，由 voice agent 用语音转述给人。
+- **接口说明**：对应工具 `get_message_from_arm_agent() -> str`。排空 `message_from_arm_agent_queue`，把 arm agent 上报的进度/结果/求助等全部消息一次性取出。**调用时机**：编排层在每条人类 user 消息之后紧跟一条独立的 role=user 状态栏消息（`<queue_status>empty/not empty</queue_status>`），voice agent 仅在状态为 `not empty` 时调用本工具主动消费；消费结果作为 user 消息进入上下文后，由 voice agent 用语音转述给人。
 - **URL**：`POST /api/v1/get_message_from_arm_agent`
 - **输入**：无请求参数，无请求体。
 - **输出**（HTTP 200）：
@@ -109,7 +109,7 @@ curl -X POST http://127.0.0.1:8001/api/v1/get_message_from_arm_agent
 - 系统有两条 FIFO 队列，由编排运行时持有，两个工具网关（8000/8001）对接同一后端：
   - `message_from_voice_agent_queue`（voice → arm 方向）：本网关的 `send_to_arm_agent` 生产，具身网关的 `get_message_from_voice_agent` 消费。
   - `message_from_arm_agent_queue`（arm → voice 方向）：具身网关的 `send_to_voice_agent` 生产，本网关的 `get_message_from_arm_agent` 消费。
-- **状态栏注入（编排层职责，非工具）**：voice agent 侧，每一条人类 user 消息进入上下文时注入 `<queue_status>empty/not empty</queue_status>`，反映 `message_from_arm_agent_queue` 当时是否非空。
+- **状态栏注入（编排层职责，非工具）**：状态栏在两个 agent 侧统一为独立的 role=user 消息。voice agent 侧，每一条人类 user 消息之后紧跟一条内容为 `<queue_status>empty/not empty</queue_status>` 的状态栏消息，反映 `message_from_arm_agent_queue` 当时是否非空；当 tool response、user input、状态栏三者同时存在时，顺序固定为 tool response → user input → 状态栏。
 - **消费结果的消息形式**：`get_message_from_arm_agent` 的返回字符串以一条 user 消息进入上下文，形如 `all_messages_from_arm_agent:...`。
 - 人优先原则：队列消息只能通过"状态栏感知 + 主动消费"进入上下文，不得直接插队打断当前推理。
 

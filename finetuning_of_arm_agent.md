@@ -29,7 +29,8 @@ move_to_coordinates:0.5,0.2,0.1
 成功到达0.5,0.2,0.1<|im_end|>
 ```
 
-- **`<queue_status>` 状态栏（最关键，pics/4.png 左下角修正后的机制）**：Arm Agent 忙碌时没有人类 user 消息可注入，因此在**每条 tool/user 工具结果之后**，必须追加一条 role=user、内容为 `<queue_status>empty</queue_status>` 或 `<queue_status>not empty</queue_status>` 的消息，随后 assistant 继续推理。所有含工具调用的样本都必须带状态栏，位置错一律打回。
+- **`<queue_status>` 状态栏（最关键，pics/4.png 左下角修正后的机制）**：Arm Agent 忙碌时没有人类 user 消息可注入，因此在**每条 tool/user 工具结果之后**，必须追加一条 role=user、内容为 `<queue_status>empty</queue_status>` 或 `<queue_status>not empty</queue_status>` 的消息，随后 assistant 继续推理。所有含工具调用的样本都必须带状态栏，位置错一律打回。状态栏在两个 agent 侧统一为独立 user 消息；**排序约定**：当 tool response、user input、状态栏三者同时存在时，顺序固定为 **tool response → user input → 状态栏**。
+- **例外：空闲自动消费不带状态栏**。Arm Agent 空闲时由运行时自动消费队列，任务消息（`all_messages_from_voice_agent:...`）以一条 user 消息注入后**不追加状态栏**——队列刚被排空，状态栏必然为 empty，没有信息量。样本中任务消息后直接是 assistant 开始规划/调用工具，不要画蛇添足补状态栏。
 - 消费到的消息以一条 user 消息进入上下文：`all_messages_from_voice_agent:消息1;消息2`。
 - Arm 侧数据**不使用** `</interrupted>` 标记（打断只发生在面向人的 Voice 侧）。
 - label mask：只对 assistant 段计算 loss。
@@ -63,6 +64,8 @@ get_message_from_voice_agent:
 </tool_call><|im_end|>
 <|im_start|>tool/user
 all_messages_from_voice_agent:用户改主意了，请改抓 yellow 物块;目标位置不变<|im_end|>
+<|im_start|>user
+<queue_status>empty</queue_status><|im_end|>
 <|im_start|>assistant
 收到变更：放弃抓取红色，改抓黄色物块，目标位置不变。
 <tool_call>
@@ -124,7 +127,7 @@ Arm Agent 的"纯对话"不是闲聊，而是不触发工具调用时的文本�
 
 ## 5. 验收标准（造完每批数据自检 + 交付前抽检 5%）
 
-1. 格式合法率 100%：ChatML 标签配对、tool_call 紧凑格式、`tool/user` 双角色、`<queue_status>` 出现在每条工具结果之后。
+1. 格式合法率 100%：ChatML 标签配对、tool_call 紧凑格式、`tool/user` 双角色、`<queue_status>` 出现在每条工具结果之后（且仅出现在工具结果之后——空闲注入的任务消息不带状态栏）。
 2. 工具返回字符串与 `api_of_embodied_tools.md` **逐字一致**（含标点与用字）。
 3. 分支覆盖率：§3.2 表格中每个分支条数达标。
 4. 行为正确性：`not empty` 后 assistant 下一步应调用 `get_message_from_voice_agent`；`empty` 时不误调用；未收到任务消息时不凭空执行具身工具。

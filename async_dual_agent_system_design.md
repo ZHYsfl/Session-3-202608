@@ -68,11 +68,13 @@
 
 人的语音交互永远不被后台任务阻塞；后台 agent 的消息只能通过状态栏感知 + 主动消费的方式进入上下文，**绝不直接插队打断**当前推理。
 
-### 4.3 `queue_status` 状态栏机制（含 pics/4.png 左下角 bug 修正）
+### 4.3 `queue_status` 状态栏机制（统一为独立 user 消息 + 固定排序）
 
-- **Voice Agent 侧**（原图描述正确）：每一条人类 user 消息进入上下文时注入 `<queue_status>empty/not empty</queue_status>`，模型随时感知 arm 方向是否有未读消息；为 `not empty` 时可调用 `get_message_from_arm_agent` 主动消费。
+状态栏在两个 agent 侧**统一**以一条独立的 role=user 消息进入上下文，内容仅为 `<queue_status>empty/not empty</queue_status>`。**排序约定**：当 tool response、user input、状态栏三者同时存在时，固定顺序为 **tool response → user input → 状态栏**。
+
+- **Voice Agent 侧**：每一条人类 user 消息之后紧跟一条状态栏消息，模型随时感知 arm 方向是否有未读消息；为 `not empty` 时可调用 `get_message_from_arm_agent` 主动消费。上一轮的工具结果（tool/user 双角色回写）本就写在该条人类消息之前，三者顺序天然满足排序约定。
 - **Arm Agent 侧**（原 pics/4.png 左下角写"作为状态栏给每条 user 信息加上 `<queue_status>`"，**有误**——Arm Agent 不与人直接对话，忙碌时根本没有新的 user 消息可供注入）。正确机制：
-  - **空闲（空下来）时**：自动消费 `message_from_voice_agent_queue`（由运行时触发一次 `get_message_from_voice_agent`），新任务由此进入上下文。
+  - **空闲（空下来）时**：自动消费 `message_from_voice_agent_queue`（由运行时触发一次 `get_message_from_voice_agent`），新任务以一条 user 消息（`all_messages_from_voice_agent:...`）进入上下文。**此时不追加状态栏**——队列刚被排空，状态栏必然为 empty，没有信息量；模型看到任务消息直接开始执行。
   - **忙碌（工具调用循环中）时**：在**每条 tool response 消息之后**，追加一条 **role=user、内容为 `<queue_status>empty/not empty</queue_status>`** 的状态栏消息，然后让 LLM **继续推理**；若队列不空，Arm Agent 可以调用 `get_message_from_voice_agent` **主动消费**，从而在任务执行中途感知新指令（改颜色 / 改位置 / 取消）。
 
 ### 4.4 消费结果的消息形式
@@ -90,7 +92,7 @@ all_messages_from_voice_agent:请改抓黄色物块;目标位置不变<|im_end|>
 
 - **与 PPT 系统的差异**：本系统没有 `remember` / `require_confirm` 需求收集与前端确认管线。人直接语音下达任务；Voice Agent 只在对话层面澄清意图（缺颜色、缺位置就问清楚），意图明确即调用 `send_to_arm_agent` 下发。微调数据要保证：**意图不明确时不得调用 `send_to_arm_agent`**。
 - **tool/user 双角色回写**：工具结果以 `tool/user` 双角色写回上下文，兼顾工具语义与"作为新输入驱动推理"。
-- **`</interrupted>` 打断重组**：被截断的 assistant 消息原样保留，用户新输入（可带 `</interrupted>` 标记与 `<queue_status>` 注入）接续其后。
+- **`</interrupted>` 打断重组**：被截断的 assistant 消息原样保留，用户新输入（可带 `</interrupted>` 标记）接续其后，随后紧跟一条独立的 `<queue_status>` 状态栏 user 消息。
 
 ## 6. 一次完整链调时序（示例）
 

@@ -15,17 +15,18 @@
 - 模板：Qwen3 ChatML（`<|im_start|>` / `<|im_end|>`），交付为 JSONL（每行 `{"messages": [...]}`，role ∈ `system` / `user` / `assistant` / `tool`）。
 - tool_call 用紧凑格式（与 EducationAgent 一致）：`<tool_call>\nfunction_name:arg1,arg2\n</tool_call>`。
 - 工具结果以 **tool/user 双角色**写回：`<|im_start|>tool/user\n发送成功<|im_end|>`。
-- **`<queue_status>` 状态栏**：**每一条人类 user 消息**进入上下文时注入 `<queue_status>empty</queue_status>` 或 `<queue_status>not empty</queue_status>`（反映 `message_from_arm_agent_queue` 是否非空），放在用户文本之前。所有含人类发言的样本都必须带。
+- **`<queue_status>` 状态栏**：**每一条人类 user 消息之后**紧跟一条独立的 role=user 状态栏消息，内容仅为 `<queue_status>empty</queue_status>` 或 `<queue_status>not empty</queue_status>`（反映 `message_from_arm_agent_queue` 是否非空）。所有含人类发言的样本都必须带。**排序约定**：当 tool response、user input、状态栏三者同时存在时，顺序固定为 **tool response → user input → 状态栏**，排错一律打回。
 - 消费到的消息以一条 user 消息进入上下文：`all_messages_from_arm_agent:消息1;消息2`。
-- **打断标记**：被打断的 assistant 消息以 `</interrupted>` 截断并原样保留；下一条用户消息以 `</interrupted>` 开头（后接 `<queue_status>` 注入和用户新文本）。
+- **打断标记**：被打断的 assistant 消息以 `</interrupted>` 截断并原样保留；下一条用户消息以 `</interrupted>` 开头（后接用户新文本），其后再跟独立的 `<queue_status>` 状态栏消息。
 - label mask：只对 assistant 段计算 loss。
 
 ### 完整示例（下发 → 问进度 → 消费转述）
 
 ```
 <|im_start|>user
-<queue_status>empty</queue_status>
 帮我把红色的物块放到 1.0, 2.0, 3.0 那里。<|im_end|>
+<|im_start|>user
+<queue_status>empty</queue_status><|im_end|>
 <|im_start|>assistant
 好的，这就安排机械臂抓取红色物块，放到坐标 (1.0, 2.0, 3.0)。
 <tool_call>
@@ -34,8 +35,9 @@ send_to_arm_agent:抓取 red 物块并放到 (1.0,2.0,3.0)。
 <|im_start|>tool/user
 发送成功<|im_end|>
 <|im_start|>user
-<queue_status>not empty</queue_status>
 进行得怎么样了？<|im_end|>
+<|im_start|>user
+<queue_status>not empty</queue_status><|im_end|>
 <|im_start|>assistant
 我看一下后台的消息。
 <tool_call>
@@ -93,7 +95,7 @@ all_messages_from_arm_agent:已到达目标位置 (1.0,2.0,3.0) 并成功释放�
 
 ## 5. 验收标准（造完每批数据自检 + 交付前抽检 5%）
 
-1. 格式合法率 100%：ChatML 标签配对、tool_call 紧凑格式、`tool/user` 双角色、每条人类 user 消息带 `<queue_status>`、打断样本带 `</interrupted>`。
+1. 格式合法率 100%：ChatML 标签配对、tool_call 紧凑格式、`tool/user` 双角色、每条人类 user 消息之后紧跟独立的 `<queue_status>` 状态栏消息（三者同时存在时顺序为 tool response → user input → 状态栏）、打断样本带 `</interrupted>`。
 2. 工具返回字符串与 `api_of_voice_tools.md` **逐字一致**。
 3. 分支覆盖率：§3.2 表格中每个场景条数达标。
 4. 行为正确性：状态栏 `not empty` 后应调用 `get_message_from_arm_agent`；`empty` 不误调用；**意图不明确时不得调用 `send_to_arm_agent`**（红线）。
