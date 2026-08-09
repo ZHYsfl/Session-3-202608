@@ -12,17 +12,39 @@
 
 ## 2. 数据格式规范
 
-- 模板：Qwen3 ChatML（`<|im_start|>` / `<|im_end|>`），交付为 JSONL（每行 `{"messages": [...]}`，role ∈ `system` / `user` / `assistant` / `tool`）。
-- tool_call 用紧凑格式（与 EducationAgent 一致）：`<tool_call>\nfunction_name:arg1,arg2\n</tool_call>`。
-- 工具结果以 **tool/user 双角色**写回：`<|im_start|>tool/user\n发送成功<|im_end|>`。
+- 模板：Qwen3 ChatML（`<|im_start|>` / `<|im_end|>`），交付为 JSONL（每行 `{"messages": [...], "tools": [...]}`，role ∈ `system` / `user` / `assistant` / `tool`）。
+- 每个样本以 `role="system"` 的系统提示词开头；顶层 `tools` 字段携带本侧 2 个工具的 JSON schema，训练时由 chat template 渲染进 system 块的 `<tools>` 段。
+- tool_call 用 **Qwen3 原生结构化协议**：assistant 消息的 `tool_calls` 字段为 `[{"type": "function", "function": {"name": "send_to_arm_agent", "arguments": {"content": "..."}}}]`，`content` 只放伴随文本；chat template 渲染为 `<tool_call>\n{"name": "...", "arguments": {...}}\n</tool_call>`。禁止自定义紧凑/括号协议。
+- 工具结果以**单条 `role="tool"` 消息**写回；chat template 渲染时自动包进 user 块的 `<tool_response>` 段（即原生格式自带"tool 结果进 user 块"效果），**不再做 tool/user 双角色手工回写**。
 - **`<queue_status>` 状态栏**：**每一条人类 user 消息之后**紧跟一条独立的 role=user 状态栏消息，内容仅为 `<queue_status>empty</queue_status>` 或 `<queue_status>not empty</queue_status>`（反映 `message_from_arm_agent_queue` 是否非空）。所有含人类发言的样本都必须带。**排序约定**：当 tool response、user input、状态栏三者同时存在时，顺序固定为 **tool response → user input → 状态栏**，排错一律打回。
-- 消费到的消息以一条 user 消息进入上下文：`all_messages_from_arm_agent:消息1;消息2`。
+- 消费到的消息以 `role="tool"` 消息进入上下文，content 为 `all_messages_from_arm_agent:消息1;消息2`（渲染后同样落在 user 的 `<tool_response>` 块内）。
 - **打断标记**：被打断的 assistant 消息以 `</interrupted>` 截断并原样保留；下一条用户消息以 `</interrupted>` 开头（后接用户新文本），其后再跟独立的 `<queue_status>` 状态栏消息。
 - label mask：只对 assistant 段计算 loss。
 
 ### 完整示例（下发 → 问进度 → 消费转述）
 
+存储形态（JSONL，一行一样本；`tools` 字段略）：
+
+```json
+{"messages": [
+  {"role": "system", "content": "你是异步双 agent 系统中的 Voice Agent，……"},
+  {"role": "user", "content": "帮我把红色的物块放到 1.0, 2.0, 3.0 那里。"},
+  {"role": "user", "content": "<queue_status>empty</queue_status>"},
+  {"role": "assistant", "content": "好的，这就安排机械臂抓取红色物块，放到坐标 (1.0, 2.0, 3.0)。", "tool_calls": [{"type": "function", "function": {"name": "send_to_arm_agent", "arguments": {"content": "抓取 red 物块并放到 (1.0,2.0,3.0)，完成后通过 send_to_voice_agent() 将结果返回给 voice agent。"}}}]},
+  {"role": "tool", "content": "发送成功"},
+  {"role": "user", "content": "进行得怎么样了？"},
+  {"role": "user", "content": "<queue_status>not empty</queue_status>"},
+  {"role": "assistant", "content": "我看一下后台的消息。", "tool_calls": [{"type": "function", "function": {"name": "get_message_from_arm_agent", "arguments": {}}}]},
+  {"role": "tool", "content": "all_messages_from_arm_agent:已到达目标位置 (1.0,2.0,3.0) 并成功释放物块，任务完成"},
+  {"role": "assistant", "content": "任务已经完成了，红色物块已经放到指定位置。"}
+], "tools": [...]}
 ```
+
+经 Qwen3 chat template 渲染后（训练时实际喂给模型的形态）：
+
+```
+<|im_start|>system
+……<tools>……（2 个工具的 JSON schema）……</tools>……<|im_end|>
 <|im_start|>user
 帮我把红色的物块放到 1.0, 2.0, 3.0 那里。<|im_end|>
 <|im_start|>user
@@ -30,10 +52,12 @@
 <|im_start|>assistant
 好的，这就安排机械臂抓取红色物块，放到坐标 (1.0, 2.0, 3.0)。
 <tool_call>
-send_to_arm_agent:抓取 red 物块并放到 (1.0,2.0,3.0)。
+{"name": "send_to_arm_agent", "arguments": {"content": "抓取 red 物块并放到 (1.0,2.0,3.0)，完成后通过 send_to_voice_agent() 将结果返回给 voice agent。"}}
 </tool_call><|im_end|>
-<|im_start|>tool/user
-发送成功<|im_end|>
+<|im_start|>user
+<tool_response>
+发送成功
+</tool_response><|im_end|>
 <|im_start|>user
 进行得怎么样了？<|im_end|>
 <|im_start|>user
@@ -41,10 +65,12 @@ send_to_arm_agent:抓取 red 物块并放到 (1.0,2.0,3.0)。
 <|im_start|>assistant
 我看一下后台的消息。
 <tool_call>
-get_message_from_arm_agent:
+{"name": "get_message_from_arm_agent", "arguments": {}}
 </tool_call><|im_end|>
-<|im_start|>tool/user
-all_messages_from_arm_agent:已到达目标位置 (1.0,2.0,3.0) 并成功释放物块，任务完成<|im_end|>
+<|im_start|>user
+<tool_response>
+all_messages_from_arm_agent:已到达目标位置 (1.0,2.0,3.0) 并成功释放物块，任务完成
+</tool_response><|im_end|>
 <|im_start|>assistant
 任务已经完成了，红色物块已经放到指定位置。<|im_end|>
 ```
@@ -95,7 +121,7 @@ all_messages_from_arm_agent:已到达目标位置 (1.0,2.0,3.0) 并成功释放�
 
 ## 5. 验收标准（造完每批数据自检 + 交付前抽检 5%）
 
-1. 格式合法率 100%：ChatML 标签配对、tool_call 紧凑格式、`tool/user` 双角色、每条人类 user 消息之后紧跟独立的 `<queue_status>` 状态栏消息（三者同时存在时顺序为 tool response → user input → 状态栏）、打断样本带 `</interrupted>`。
+1. 格式合法率 100%：样本带 `system` 消息与 `tools` 字段、assistant 工具调用为结构化 `tool_calls`（JSON arguments）、工具结果为单条 `role="tool"` 消息、每条人类 user 消息之后紧跟独立的 `<queue_status>` 状态栏消息（三者同时存在时顺序为 tool response → user input → 状态栏）、打断样本带 `</interrupted>`。
 2. 工具返回字符串与 `api_of_voice_tools.md` **逐字一致**。
 3. 分支覆盖率：§3.2 表格中每个场景条数达标。
 4. 行为正确性：状态栏 `not empty` 后应调用 `get_message_from_arm_agent`；`empty` 不误调用；**意图不明确时不得调用 `send_to_arm_agent`**（红线）。

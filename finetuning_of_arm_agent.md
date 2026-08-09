@@ -7,72 +7,113 @@
 
 - 基座（微调前）：[`Qwen/Qwen3-4B-Instruct-2507`](https://www.modelscope.cn/models/Qwen/Qwen3-4B-Instruct-2507)。
 - 部署：RTX 3090 #2，负责 Arm Agent 的微调与推理常驻（Voice Agent 在 3090 #1）。
-- Arm Agent **不与人直接对话**。它的输入是：任务消息（`all_messages_from_voice_agent:...`）、工具结果（`tool/user` 双角色）、`<queue_status>` 状态栏；它的输出是：规划/说明文本 + tool_call。
+- Arm Agent **不与人直接对话**。它的输入是：任务消息（`all_messages_from_voice_agent:...`）、工具结果（`role="tool"` 消息）、`<queue_status>` 状态栏；它的输出是：规划/说明文本 + 结构化 tool_calls。
 
 ## 2. 数据格式规范
 
-- 模板：Qwen3 ChatML（`<|im_start|>` / `<|im_end|>`），交付为 JSONL（每行 `{"messages": [...]}`，role ∈ `system` / `user` / `assistant` / `tool`）。
-- tool_call 用紧凑格式（与 EducationAgent 一致）：
+- 模板：Qwen3 ChatML（`<|im_start|>` / `<|im_end|>`），交付为 JSONL（每行 `{"messages": [...], "tools": [...]}`，role ∈ `system` / `user` / `assistant` / `tool`）。
+- 每个样本以 `role="system"` 的系统提示词开头；顶层 `tools` 字段携带本侧 6 个工具的 JSON schema，训练时由 chat template 渲染进 system 块的 `<tools>` 段。
+- tool_call 用 **Qwen3 原生结构化协议**——assistant 消息的 `tool_calls` 字段（`arguments` 为 JSON 对象），`content` 只放伴随文本；chat template 渲染为：
 
 ```
 <|im_start|>assistant
 我先移动到物块位置。
 <tool_call>
-move_to_coordinates:0.5,0.2,0.1
+{"name": "move_to_coordinates", "arguments": {"x": "0.5", "y": "0.2", "z": "0.1"}}
 </tool_call><|im_end|>
 ```
 
-- 工具结果以 **tool/user 双角色**写回：
+禁止自定义紧凑/括号协议（如 `[tool_call: ...]`、`move_to_coordinates:0.5,0.2,0.1`）。
+
+- 工具结果以**单条 `role="tool"` 消息**写回；chat template 渲染时自动包进 user 块的 `<tool_response>` 段：
 
 ```
-<|im_start|>tool/user
-成功到达0.5,0.2,0.1<|im_end|>
+<|im_start|>user
+<tool_response>
+成功到达0.5,0.2,0.1
+</tool_response><|im_end|>
 ```
 
-- **`<queue_status>` 状态栏（最关键，pics/4.png 左下角修正后的机制）**：Arm Agent 忙碌时没有人类 user 消息可注入，因此在**每条 tool/user 工具结果之后**，必须追加一条 role=user、内容为 `<queue_status>empty</queue_status>` 或 `<queue_status>not empty</queue_status>` 的消息，随后 assistant 继续推理。所有含工具调用的样本都必须带状态栏，位置错一律打回。状态栏在两个 agent 侧统一为独立 user 消息；**排序约定**：当 tool response、user input、状态栏三者同时存在时，顺序固定为 **tool response → user input → 状态栏**。
+**不再做 tool/user 双角色手工回写**（原生格式自带"tool 结果进 user 块"效果）。
+
+- **`<queue_status>` 状态栏（最关键，pics/4.png 左下角修正后的机制）**：Arm Agent 忙碌时没有人类 user 消息可注入，因此在**每条 `role="tool"` 工具结果消息之后**，必须追加一条 role=user、内容为 `<queue_status>empty</queue_status>` 或 `<queue_status>not empty</queue_status>` 的消息，随后 assistant 继续推理。所有含工具调用的样本都必须带状态栏，位置错一律打回。状态栏在两个 agent 侧统一为独立 user 消息；**排序约定**：当 tool response、user input、状态栏三者同时存在时，顺序固定为 **tool response → user input → 状态栏**。
 - **例外：空闲自动消费不带状态栏**。Arm Agent 空闲时由运行时自动消费队列，任务消息（`all_messages_from_voice_agent:...`）以一条 user 消息注入后**不追加状态栏**——队列刚被排空，状态栏必然为 empty，没有信息量。样本中任务消息后直接是 assistant 开始规划/调用工具，不要画蛇添足补状态栏。
-- 消费到的消息以一条 user 消息进入上下文：`all_messages_from_voice_agent:消息1;消息2`。
+- 消费到的消息以 `role="tool"` 消息进入上下文，content 为 `all_messages_from_voice_agent:消息1;消息2`（渲染后同样落在 user 的 `<tool_response>` 块内）。
 - Arm 侧数据**不使用** `</interrupted>` 标记（打断只发生在面向人的 Voice 侧）。
 - label mask：只对 assistant 段计算 loss。
 
 ### 完整示例（忙碌中消费新指令）
 
+存储形态（JSONL，一行一样本；`tools` 字段略）：
+
+```json
+{"messages": [
+  {"role": "system", "content": "你是异步双 agent 系统中的 Arm Agent，……"},
+  {"role": "user", "content": "all_messages_from_voice_agent:用户给了以下信息：抓取 red 物块并放到 (1.0,2.0,3.0)，请你开始执行。"},
+  {"role": "assistant", "content": "收到，我先确认当前坐标，再移动到物块位置抓取红色物块。", "tool_calls": [{"type": "function", "function": {"name": "get_current_coordinates", "arguments": {}}}]},
+  {"role": "tool", "content": "我的坐标是0.0,0.0,0.0"},
+  {"role": "user", "content": "<queue_status>empty</queue_status>"},
+  {"role": "assistant", "content": "", "tool_calls": [{"type": "function", "function": {"name": "move_to_coordinates", "arguments": {"x": "0.5", "y": "0.2", "z": "0.1"}}}]},
+  {"role": "tool", "content": "成功到达0.5,0.2,0.1"},
+  {"role": "user", "content": "<queue_status>not empty</queue_status>"},
+  {"role": "assistant", "content": "队列里有新消息，我先消费看看再决定下一步。", "tool_calls": [{"type": "function", "function": {"name": "get_message_from_voice_agent", "arguments": {}}}]},
+  {"role": "tool", "content": "all_messages_from_voice_agent:用户改主意了，请改抓 yellow 物块;目标位置不变"},
+  {"role": "user", "content": "<queue_status>empty</queue_status>"},
+  {"role": "assistant", "content": "收到变更：放弃抓取红色，改抓黄色物块，目标位置不变。", "tool_calls": [{"type": "function", "function": {"name": "grab_the_block", "arguments": {"color": "yellow"}}}]},
+  {"role": "tool", "content": "有这种颜色的物块，且夹取物块成功"},
+  {"role": "user", "content": "<queue_status>empty</queue_status>"},
+  {"role": "assistant", "content": "……（移动到目标位置 → release → send_to_voice_agent 上报完成）"}
+], "tools": [...]}
 ```
+
+经 Qwen3 chat template 渲染后（训练时实际喂给模型的形态）：
+
+```
+<|im_start|>system
+……<tools>……（6 个工具的 JSON schema）……</tools>……<|im_end|>
 <|im_start|>user
 all_messages_from_voice_agent:用户给了以下信息：抓取 red 物块并放到 (1.0,2.0,3.0)，请你开始执行。<|im_end|>
 <|im_start|>assistant
 收到，我先确认当前坐标，再移动到物块位置抓取红色物块。
 <tool_call>
-get_current_coordinates:
+{"name": "get_current_coordinates", "arguments": {}}
 </tool_call><|im_end|>
-<|im_start|>tool/user
-我的坐标是0.0,0.0,0.0<|im_end|>
+<|im_start|>user
+<tool_response>
+我的坐标是0.0,0.0,0.0
+</tool_response><|im_end|>
 <|im_start|>user
 <queue_status>empty</queue_status><|im_end|>
 <|im_start|>assistant
 <tool_call>
-move_to_coordinates:0.5,0.2,0.1
+{"name": "move_to_coordinates", "arguments": {"x": "0.5", "y": "0.2", "z": "0.1"}}
 </tool_call><|im_end|>
-<|im_start|>tool/user
-成功到达0.5,0.2,0.1<|im_end|>
+<|im_start|>user
+<tool_response>
+成功到达0.5,0.2,0.1
+</tool_response><|im_end|>
 <|im_start|>user
 <queue_status>not empty</queue_status><|im_end|>
 <|im_start|>assistant
 队列里有新消息，我先消费看看再决定下一步。
 <tool_call>
-get_message_from_voice_agent:
+{"name": "get_message_from_voice_agent", "arguments": {}}
 </tool_call><|im_end|>
-<|im_start|>tool/user
-all_messages_from_voice_agent:用户改主意了，请改抓 yellow 物块;目标位置不变<|im_end|>
+<|im_start|>user
+<tool_response>
+all_messages_from_voice_agent:用户改主意了，请改抓 yellow 物块;目标位置不变
+</tool_response><|im_end|>
 <|im_start|>user
 <queue_status>empty</queue_status><|im_end|>
 <|im_start|>assistant
 收到变更：放弃抓取红色，改抓黄色物块，目标位置不变。
 <tool_call>
-grab_the_block:yellow
+{"name": "grab_the_block", "arguments": {"color": "yellow"}}
 </tool_call><|im_end|>
-<|im_start|>tool/user
-有这种颜色的物块，且夹取物块成功<|im_end|>
+<|im_start|>user
+<tool_response>
+有这种颜色的物块，且夹取物块成功
+</tool_response><|im_end|>
 <|im_start|>user
 <queue_status>empty</queue_status><|im_end|>
 <|im_start|>assistant
@@ -127,7 +168,7 @@ Arm Agent 的"纯对话"不是闲聊，而是不触发工具调用时的文本�
 
 ## 5. 验收标准（造完每批数据自检 + 交付前抽检 5%）
 
-1. 格式合法率 100%：ChatML 标签配对、tool_call 紧凑格式、`tool/user` 双角色、`<queue_status>` 出现在每条工具结果之后（且仅出现在工具结果之后——空闲注入的任务消息不带状态栏）。
+1. 格式合法率 100%：样本带 `system` 消息与 `tools` 字段、assistant 工具调用为结构化 `tool_calls`（JSON arguments）、工具结果为单条 `role="tool"` 消息、`<queue_status>` 出现在每条工具结果之后（且仅出现在工具结果之后——空闲注入的任务消息不带状态栏）。
 2. 工具返回字符串与 `api_of_embodied_tools.md` **逐字一致**（含标点与用字）。
 3. 分支覆盖率：§3.2 表格中每个分支条数达标。
 4. 行为正确性：`not empty` 后 assistant 下一步应调用 `get_message_from_voice_agent`；`empty` 时不误调用；未收到任务消息时不凭空执行具身工具。
