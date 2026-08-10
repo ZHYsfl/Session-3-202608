@@ -1,7 +1,7 @@
 ---
 theme: seriph
 background: ./cover.jpg
-title: "全双工语音 Agent 系统设计"
+title: "全双工语音 × 具身执行双 Agent 系统"
 class: text-center
 transition: slide-left
 mdc: true
@@ -36,9 +36,9 @@ mdc: true
 }
 </style>
 
-# 全双工语音 Agent 系统
+# 全双工语音 × 具身执行双 Agent 系统
 
-## 从串行 Pipeline 到异步双 Agent 的设计演进
+## Voice Agent + Arm Agent：从串行 Pipeline 到异步双 Agent 的设计演进
 
 ---
 transition: slide-up
@@ -218,6 +218,66 @@ title: "上下文工程（二）：固定排序"
 
 <div class="max-w-5xl mx-auto px-10 text-left" style="margin-top: 1.5rem; font-size: 0.85rem; line-height: 1.6; color: #4b5563;">
 <div><span class="font-semibold text-slate-700">排序约定：</span>tool response、user input、状态栏三者同时存在时，固定顺序为 <span class="text-blue-700 font-medium">tool response → user input → 状态栏</span>；工具结果以单条 role=tool 消息写回（chat template 渲染进 user 的 &lt;tool_response&gt; 块），多轮之后队列状态与上下文始终自洽。</div>
+</div>
+
+---
+transition: slide-up
+title: "训练数据集全景"
+---
+
+<div class="text-center" style="margin-top: 0.75rem;">
+<div style="font-size: 2rem; font-weight: 400; color: #5a7a8a;">训练数据集全景结构</div>
+<div style="font-size: 0.9rem; color: #6b7280; margin-top: 0.3rem;">异步双 Agent 训练数据集 · 2,900 条</div>
+</div>
+
+<div class="w-full flex justify-center" style="margin-top: 0.5rem;">
+  <img src="./pics/数据架构概览图.png" alt="数据集全景结构" style="max-width: 92%; max-height: 375px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 10px;" />
+</div>
+
+---
+transition: slide-up
+title: "具身工具 API 网关"
+---
+
+<div class="text-center" style="margin-top: 0.75rem;">
+<div style="font-size: 2rem; font-weight: 400; color: #5a7a8a;">具身工具 REST 网关（:8000）</div>
+<div style="font-size: 0.9rem; color: #6b7280; margin-top: 0.3rem;">6 个协议工具对外暴露为 RESTful API：同步阻塞调用，联调无需轮询</div>
+</div>
+
+<style scoped>
+table { font-size: 0.78rem; }
+table td, table th { padding: 0.3rem 0.6rem; }
+</style>
+
+<div class="max-w-5xl mx-auto px-10" style="margin-top: 1.2rem;">
+
+| 接口 | 方法 | 说明 |
+| --- | --- | --- |
+| `get_current_coordinates` | GET | 查当前坐标（低速 / 高速两种返回话术） |
+| `move_to_coordinates` | POST | 移动到 x,y,z，内部误差校验，未达标如实报误差 |
+| `grab_the_block` | POST | 视觉观察 → 夹取，camera2 第三视角判定成败 |
+| `release_the_block` | POST | 交叉验证是否夹持，释放失败则请人介入 |
+| `send_to_voice_agent` | POST | 生产消息进 arm→voice 队列（进度 / 完成 / 求助） |
+| `get_message_from_voice_agent` | POST | 排空 voice→arm 队列，一次性取回全部新指令 |
+
+</div>
+
+<div class="max-w-5xl mx-auto px-10 text-left" style="margin-top: 1rem; font-size: 0.82rem; line-height: 1.6; color: #4b5563;">
+<div><span class="font-semibold text-slate-700">统一约定：</span>所有接口返回 <code>{code, result, error}</code> 三段式，工具原始字符串经 <code>result</code> 逐字透传；HTTP 200 / 400 / 500 对应网关成功 / 参数错误 / 内部异常。本网关与语音网关（:8001）对接<span class="text-blue-700 font-medium">同一个队列后端</span>，两条 FIFO 队列即双 Agent 的生产–消费通道。</div>
+</div>
+
+---
+transition: slide-up
+title: "演示：具身工具 API 联调"
+---
+
+<div class="text-center" style="margin-top: 0.75rem;">
+<div style="font-size: 2rem; font-weight: 400; color: #5a7a8a;">演示 —— 具身工具 API 网关联调</div>
+<div style="font-size: 0.9rem; color: #6b7280; margin-top: 0.3rem;">REST 网关搭建完成后的端到端真机演示</div>
+</div>
+
+<div class="w-full flex justify-center" style="margin-top: 2rem;">
+  <video src="./embodied_tools.mp4" controls muted style="max-width: 76%; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.08);" />
 </div>
 
 ---
