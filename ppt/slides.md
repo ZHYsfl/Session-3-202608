@@ -217,7 +217,7 @@ title: "上下文工程（二）：固定排序"
 </div>
 
 <div class="max-w-5xl mx-auto px-10 text-left" style="margin-top: 1.5rem; font-size: 0.85rem; line-height: 1.6; color: #4b5563;">
-<div><span class="font-semibold text-slate-700">排序约定：</span>tool response、user input、状态栏三者同时存在时，固定顺序为 <span class="text-blue-700 font-medium">tool response → user input → 状态栏</span>；tool/user 双角色回写工具结果，多轮之后队列状态与上下文始终自洽。</div>
+<div><span class="font-semibold text-slate-700">排序约定：</span>tool response、user input、状态栏三者同时存在时，固定顺序为 <span class="text-blue-700 font-medium">tool response → user input → 状态栏</span>；工具结果以单条 role=tool 消息写回（chat template 渲染进 user 的 &lt;tool_response&gt; 块），多轮之后队列状态与上下文始终自洽。</div>
 </div>
 
 ---
