@@ -165,30 +165,3 @@ node_modules/
 .toolchain/
 
 ppt/example/
-
-# ---- SO-101 arm module additions (PR cleanup) ----
-# Tooling caches
-.ruff_cache/
-
-# Logs directory (in addition to *.log above)
-logs/
-
-# Temp / scratch / runtime outputs
-tmp/
-temp/
-outputs/
-runs/
-
-# Archives
-*.zip
-*.rar
-*.7z
-*.tar
-*.tar.gz
-
-# OS cruft
-.DS_Store
-Thumbs.db
-
-# Training-only artifacts (runtime never loads these; models live in models/)
-data/

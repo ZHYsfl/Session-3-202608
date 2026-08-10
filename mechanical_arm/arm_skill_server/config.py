@@ -12,7 +12,7 @@ import yaml
 
 from .robot.kinematics import JointModel, RobotModel
 
-# 项目根目录(F:\pr2)。运行脚本时以 F:\pr2 为 cwd。
+# 模块根目录(mechanical_arm/)。configs/ 等基于模块根解析, 不依赖 cwd。
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_DIR = _PROJECT_ROOT / "configs"
 

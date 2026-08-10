@@ -13,7 +13,7 @@
 
 ## 1. 代码与配置（必须上传）
 
-- [ ] 项目根目录整体上传（保持相对路径不变：`configs/`、`models/`、`docs/`、`scripts/`、`arm_skill_server/`）
+- [ ] 本模块位于仓库根目录下的 `mechanical_arm/`，整体上传 `mechanical_arm/`（保持内部相对路径不变：`arm_skill_server/`、`configs/`、`models/`、`scripts/`、`docs/`）
 - [ ] `requirements.txt` 已包含运行时依赖：fastapi / uvicorn / pydantic / numpy / PyYAML / opencv-python / mujoco / httpx / torch（torch 仅 `tiny_detector`/`bc` 模式需要）
 - [ ] `configs/`：control.yaml / robot.yaml / simulation.yaml / vision.yaml 四个都在，且与代码期望一致
 - [ ] `models/`：grasp_policy.pt、tiny_detector.pt 存在（默认 hsv+scripted 模式不强依赖，但文件应随包上传）
@@ -44,13 +44,15 @@
 
 ## 5. 上传命令（占位符替换后再执行）
 
+上传的是模块根目录 `mechanical_arm/`（在仓库根目录的上一级执行，或按实际位置调整路径）：
+
 ```bash
-# scp 整个项目（在项目根目录的上一级执行）
-scp -r pr2 <USER>@<SERVER_IP>:<REMOTE_PATH>/pr2
+# scp 整个模块
+scp -r mechanical_arm <USER>@<SERVER_IP>:<REMOTE_PATH>/mechanical_arm
 
 # 或 rsync（推荐，增量）
 rsync -avz --exclude '.venv' --exclude '__pycache__' --exclude '*.pyc' \
-  ./pr2 <USER>@<SERVER_IP>:<REMOTE_PATH>/
+  ./mechanical_arm <USER>@<SERVER_IP>:<REMOTE_PATH>/
 ```
 
 - `<USER>`：SSH 用户名

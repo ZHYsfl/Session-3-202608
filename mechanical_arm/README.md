@@ -16,7 +16,10 @@
 
 ## 快速开始
 
+本模块位于仓库根目录下的 **`mechanical_arm/`**。以下命令均在该目录内执行。
+
 ```bash
+cd mechanical_arm
 pip install -r requirements.txt
 
 # 机械臂模块独立 3D Demo（arm-only, 不依赖 Voice Agent）：自动顺序演示四个工具
@@ -33,21 +36,27 @@ python scripts/run_final_demo.py
 #   键盘备选: 1=抓红 2=抓黄 3=抓白  R=释放  H=重置  关闭窗口=退出
 ```
 
+headless 服务器入口（不依赖 GUI，绑定 0.0.0.0:8000）：
+
+```bash
+cd mechanical_arm
+python scripts/run_api.py
+# 健康检查: curl http://127.0.0.1:8000/health
+# 四工具冒烟: python scripts/smoke_test_arm_api.py --base-url http://127.0.0.1:8000
+```
+
 ## 运行测试
 
 ```bash
-# 全量回归（含 MuJoCo 真物理测试，较慢）
-pytest
+# 全量回归（含 MuJoCo 真物理测试，较慢；排除需要 GUI 的用例）
+cd mechanical_arm
+pytest -m "not gui"
 
-# 快速回归（排除 simulator 标记）
+# 快速回归（进一步排除 simulator 标记的 MuJoCo 真物理测试）
 pytest -m "not simulator"
-
-# 延迟基准（语音→结果 端到端，HTTP 全链路）
-python scripts/benchmark_dual_agent.py
 ```
 
-Phase 6 实测：全量 **154 passed**；快速回归 130 passed / 24 deselected。
-端到端延迟（HTTP 全链路）：fast 节奏约 **0.05s/命令**；realtime 含真实物理 移动 0.97s / 抓取 0.98s / 释放 0.05s（合计约 2.1s）。
+实测：全量回归 **156 passed**。
 
 ## 阶段状态
 
@@ -65,24 +74,23 @@ Phase 6 实测：全量 **154 passed**；快速回归 130 passed / 24 deselected
 > 机械臂模块（3D 仿真、控制、视觉/抓取策略、四个 Arm Tool、REST 暴露）独立可演示，
 > 入口 `scripts/run_arm_demo.py`，不依赖 Voice Agent。
 
-各阶段详细报告见 `docs/progress/phase1~6_report.md`。
-
 ## 目录
 
 ```
-arm_skill_server/
-  api/            FastAPI 网关(arm :8000, voice :8001)
-  skills/         协议 6 工具 + 双 Agent 队列工具
-  voice/          Voice Agent: SimulatedSTT / parse_intent / SimulatedTTS /
-                  VoiceAgent / ArmAgent / 传输层(InProcess / HTTP)
-  perception/     HSV 检测 / TinyDetector / camera2 交叉验证 / 相机模型
-  robot/          SO-101 运动学 / 轨迹 / 50Hz 控制 / RobotBackend(Sim2Real)
-  runtime/        单例动作互斥 + 取消令牌
-  queue/          InMemoryQueue 两条 FIFO 队列
-  tests/          unit/ + integration/（含 simulator 标记）
-configs/          *.yaml 阈值配置（业务代码禁止 hardcode）
-scripts/          3D 仿真 GUI / 最终 Demo / 延迟基准 / 训练 / 数据生成
-docs/             协议、架构、设计、各阶段报告
+mechanical_arm/
+  arm_skill_server/
+    api/            FastAPI 网关(arm :8000, voice :8001)
+    skills/         协议工具(四个机械臂工具 + 队列工具)
+    voice/          Voice Agent(双 Agent 演示用)
+    perception/     HSV 检测 / TinyDetector / camera2 交叉验证 / 相机模型
+    robot/          SO-101 运动学 / 轨迹 / 50Hz 控制 / RobotBackend(Sim2Real)
+    runtime/        单例动作互斥 + 取消令牌
+    queue/          InMemoryQueue 两条 FIFO 队列
+    tests/          unit/ + integration/（含 simulator 标记）
+  configs/          *.yaml 阈值配置（业务代码禁止 hardcode）
+  models/           最终 checkpoint（grasp_policy.pt / tiny_detector.pt）
+  scripts/          3D 仿真 GUI / 服务器入口 / 冒烟 / HTTP 回归
+  docs/             协议 / 部署 / 交接文档
 ```
 
 ## 文档
@@ -90,15 +98,12 @@ docs/             协议、架构、设计、各阶段报告
 | 文档 | 内容 |
 | --- | --- |
 | `docs/api_of_embodied_tool.md` | 机械臂工具网关 REST 协议（Source of Truth，**冻结**） |
-| `docs/api_of_voice_tools.md` | 语音网关 REST 协议（:8001） |
-| `docs/async_dual_agent_system_design.md` | 双 Agent 全双工 + 实时中断设计 |
-| `docs/architecture.md` | 分层架构与 Sim2Real 设计 |
-| `docs/kinematics.md` | 运动学 / 轨迹数学 |
-| `docs/perception.md` | 视觉感知层设计 |
-| `docs/architecture_notes.md` | 中断/并发等架构笔记 |
-| `docs/progress/phaseX_report.md` | 各阶段交付报告 |
+| `docs/api.md` | 协议实现记录（格式化约定 / 错误分支 / 示例） |
+| `docs/ARM_SERVER_DEPLOYMENT.md` | 服务器部署（装 / 起 / 验 / headless / 日志 / 停止） |
+| `docs/ARM_MODULE_HANDOFF.md` | 交接文档（Base URL / Blocking 语义 / 冒烟 / 报障） |
+| `docs/SERVER_UPLOAD_CHECKLIST.md` | 上传核对清单 |
 
 ## 协议冻结
 
-`docs/api_of_embodied_tool.md` 与 `docs/api_of_voice_tools.md` 中的 HTTP 路径 / 方法 /
-字段 / 返回字符串 / 业务语义为**冻结协议**，不得擅自修改。如需变更：先写测试证明缺陷 → 修复 → 全量回归。
+`docs/api_of_embodied_tool.md` 中的 HTTP 路径 / 方法 / 字段 / 返回字符串 / 业务语义为
+**冻结协议**，不得擅自修改。如需变更：先写测试证明缺陷 → 修复 → 全量回归。

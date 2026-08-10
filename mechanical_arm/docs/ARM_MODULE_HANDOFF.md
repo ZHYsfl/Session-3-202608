@@ -24,8 +24,10 @@
 
 ## 3. 启动
 
+本模块位于仓库根目录下的 `mechanical_arm/`，以下命令均在该目录内执行。
+
 ```bash
-cd <PROJECT_ROOT>
+cd mechanical_arm
 pip install -r requirements.txt
 python scripts/run_api.py            # 默认 0.0.0.0:8000
 # 或: ./scripts/start_arm_server.sh
