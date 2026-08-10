@@ -1,0 +1,88 @@
+# ============================================================
+# 控制参数
+# 单位: 长度 meter, 角度 radian, 速度 rad/s, 加速度 rad/s^2
+# 所有阈值都在这里, 禁止 hardcode 到业务代码。
+# ============================================================
+
+control:
+  frequency_hz: 50.0            # 控制频率(每次 step 约 20ms, 至少检查一次取消)
+  dt: 0.02                      # 单步积分步长(秒), 与 frequency_hz 对应
+
+  # move_to_coordinates 到达判定: |末端实际 - 目标| 距离阈值
+  position_threshold_m: 0.02
+
+  # 关节空间收敛判定
+  joint_convergence_tol_rad: 0.005
+
+  # 动作超时(秒)
+  move_timeout_s: 10.0
+  grasp_timeout_s: 10.0
+
+  # get_current_coordinates 速度阈值(m/s)
+  # !!! 语义待确认: 协议文档对“速度低于阈值时返回的坐标位置描述”格式未定义。
+  #     当前统一返回 "我的坐标是{x},{y},{z}"。见 docs/architecture_notes.md
+  velocity_threshold_mps: 0.01
+
+  # 抓取序列参数(相对物块中心)
+  grasp:
+    approach_height_m: 0.08     # 先移动到物块上方 approach_height 处
+    descent_offset_m: 0.015     # 下降目标: 物块 z + descent_offset(末端落到物块中心附近)
+    lift_height_m: 0.10         # 夹住后抬升到物块 z + lift_height
+    holding_proximity_m: 0.04   # 判定“夹住了”: 物块中心到末端距离 < 该值
+
+  # Phase 5 抓取策略:
+  #   "scripted" 脚本 IK 专家(approach/descend/close/lift, 确定性, 默认)
+  #   "bc"       自训练 BC 策略闭环抓取(需先跑 scripts/generate_grasp_dataset.py
+  #              && scripts/train_grasp_policy.py 产出 models/grasp_policy.pt)
+  grasp_mode: "scripted"
+  # BC 策略推理参数(grasp_mode: "bc" 时读)
+  # 执行模型(Phase 5 定标): 策略每 tick 决策目标点 wp = ee + d 与夹爪意图 grip;
+  # 移动用与 scripted 同款的关节空间收敛(move_to_point), 仅当目标点改变/到位才重规划。
+  # 原因: 每 tick 对任意中间点重解 IK 在物块附近(近底座)的奇异姿态下会解出伺服
+  # 无法执行的关节角 -> 末端爬行/停住(白块超时)。固定相位目标点(A/D/L)都可执行。
+  grasp_policy:
+    checkpoint: "models/grasp_policy.pt"   # 项目根相对路径(BC 策略权重)
+    grip_threshold: 0.5                    # 闭夹爪触发: grip 概率超过该值
+    phase_threshold: 0.3                   # 相位切换(approach->descend): grip ≥ 该值
+    close_xy_m: 0.04                       # 闭夹爪前与物块的水平距离上限(防御性守卫, m)
+    close_z_tol_m: 0.015                   # 闭夹爪前与下降点的高度容差(防御性守卫, m)
+    close_settle_ticks: 3                  # 闭夹爪前须连续 N tick 停在下降点附近
+    waypoint_re_tol_m: 0.003               # |wp-ee| 漂移超该值即重新规划移动; 处理 approach
+                                           # 末端相位过渡的微小下移(~4-18mm), 不被收敛噪声(~2mm)误触发
+
+  # Phase 6 camera2 第三视角交叉验证(协议 §2.3/§2.4「第二机位摄像头判断」):
+  # 抓取/释放结果除物理验证外, 再用 camera2 图像 + 视觉检测交叉确认物块是否
+  # 真的被夹起(在末端附近且末端离桌)/ 已放回(不再在末端附近)。纯视觉, 不读
+  # 物块 ground truth; 无 camera2 或取帧故障时回退物理验证(不误报失败)。
+  grasp_verify_camera2: true
+  grasp_verify_camera2_px_tol: 40.0     # 物块质心与末端投影像素距离阈值(实测: 夹起 9px / 放下 61px)
+  grasp_verify_lift_z_m: 0.03           # 末端须离桌面超过该高度才算"已抬起"
+
+  # Phase 5 自训练数据/训练参数(generate_grasp_dataset.py / train_grasp_policy.py 读)
+  grasp_training:
+    dataset_path: "data/grasp_dataset.npz"
+    n_episodes: 60                         # 专家演示场景数(单块随机布局)
+    seed: 0                                # 固定 seed -> 数据集可复现
+    x_range: [0.24, 0.32]                  # 与 vision.training 同一可达+可视+非遮挡包络
+    y_range: [-0.08, 0.08]
+    epochs: 200                            # CPU 上秒级
+    lr: 1.0e-3
+    val_frac: 0.1
+    grip_loss_weight: 0.5                  # 训练 loss = MSE(位移) + 该权重 * BCE(grip)
+
+  # 执行节奏: "realtime" 真实时间(演示/联调, 机械臂按 50Hz 真实推进)
+  #           "fast" 尽快(测试/无等待), 仿真步长仍为 dt
+  pacing: "realtime"
+
+  # 物块定位方式:
+  #   "ground_truth"  直接读仿真物块状态(Phase 1 行为; 测试默认用这个保持原语义)
+  #   "hsv"           相机取帧 -> HSV 检测 -> 像素投影到世界(Phase 2, 本配置默认)
+  #   "tiny_detector" 相机取帧 -> 自训练 TinyDetector(Phase 4)-> 像素投影到世界。
+  #                   需先训练: scripts/generate_tiny_dataset.py + train_tiny_detector.py
+  perception_mode: "hsv"
+
+  # 后端选择(Phase 3):
+  #   "kinematic" 纯运动学后端 + 合成相机(Phase 1/2 行为, 零依赖, 默认)
+  #   "mujoco"    真 3D 物理仿真(MuJoCo)+ 渲染器相机(需 python -m pip install mujoco)
+  # scripts/run_api.py 与 scripts/run_3d_sim.py 按此字段构造对应后端。
+  backend_mode: "kinematic"

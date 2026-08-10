@@ -1,0 +1,13 @@
+[project]
+name = "arm-skill-server"
+version = "0.1.0"
+description = "SO-101 Arm Skill Server: 机械臂执行层 + 运动学仿真 + REST API (Sim2Real)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["arm_skill_server/tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+markers = [
+    "simulator: 需要 MuJoCo 真 3D 物理仿真(较慢)。快速回归用 pytest -m 'not simulator'。",
+]

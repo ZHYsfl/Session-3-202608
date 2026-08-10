@@ -1,0 +1,21 @@
+# Arm Skill Server 依赖 (Windows 原生, 纯 CPU 可运行)
+# 已实测本机版本: fastapi 0.115.6 / uvicorn 0.34.0 / pydantic 2.10.5
+#                     numpy 2.4.2 / PyYAML 6.0.3 / pytest 8.3.4
+fastapi>=0.115
+uvicorn>=0.34
+pydantic>=2.10
+numpy>=1.26
+PyYAML>=6.0
+
+# 测试
+pytest>=8.0
+httpx>=0.28
+
+# Phase 2 视觉(本机已实测 4.13.0)
+opencv-python>=4.13
+
+# Phase 3 真 3D 物理仿真(MuJoCo, 本机已实测 3.11.0)
+mujoco>=3.0
+
+# Phase 4/5 训练(本机已实测 2.10.0+cpu; 无需 GPU, CPU 版即可)
+torch>=2.10
