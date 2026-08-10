@@ -23,10 +23,11 @@ mdc: true
   text-shadow: 0 2px 10px rgba(0,0,0,0.5) !important;
 }
 .slidev-layout h1 {
-  font-size: 3.6rem !important;
+  font-size: 2.9rem !important;
   font-weight: 500 !important;
   margin-bottom: 0.5rem !important;
   color: white !important;
+  white-space: nowrap !important;
 }
 .slidev-layout h2 {
   font-size: 1.4rem !important;
@@ -236,6 +237,31 @@ title: "训练数据集全景"
 
 ---
 transition: slide-up
+title: "Voice Agent 训练曲线"
+---
+
+<div class="text-center" style="margin-top: 0.75rem;">
+<div style="font-size: 2rem; font-weight: 400; color: #5a7a8a;">Voice Agent · SFT 训练曲线</div>
+<div style="font-size: 0.9rem; color: #6b7280; margin-top: 0.3rem;">Qwen3-4B + QLoRA · 训练 loss 收敛至 ≈ 0.057，held-out 验证 loss 0.243 → 0.156</div>
+</div>
+
+<div class="w-full flex justify-center" style="margin-top: 0.8rem;">
+  <img src="./pics/voice_agent训练曲线图.png" alt="Voice Agent SFT 训练曲线" style="max-width: 90%; max-height: 385px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 10px;" />
+</div>
+
+---
+layout: center
+class: text-center
+transition: fade
+title: "训练中"
+---
+
+<div style="font-size: 2.6rem; font-weight: 400; color: #5a7a8a;">Still training now…</div>
+
+<div class="mt-4 text-slate-500" style="font-size: 1rem;">Voice Agent ready · Arm Agent SFT still in progress</div>
+
+---
+transition: slide-up
 title: "具身工具 API 网关"
 ---
 
@@ -281,6 +307,30 @@ title: "演示：具身工具 API 联调"
 </div>
 
 ---
+transition: slide-up
+title: "团队协作"
+---
+
+<div class="text-center" style="margin-top: 0.75rem;">
+<div style="font-size: 2rem; font-weight: 400; color: #5a7a8a;">团队协作 —— GitHub 协同开发</div>
+<div style="font-size: 0.9rem; color: #6b7280; margin-top: 0.3rem;">14 位贡献者 · 分支并行开发 · PR 合入主干</div>
+</div>
+
+<div class="w-full flex justify-center" style="margin-top: 1.2rem;">
+  <img src="./pics/github_cowork.png" alt="GitHub 团队协作截图" style="max-width: 88%; max-height: 380px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.08);" />
+</div>
+
+---
+layout: center
+class: text-center
+transition: fade
+title: "系统即将就绪"
+---
+
+<div style="font-size: 2.6rem; font-weight: 400; color: #5a7a8a;">The full system goes live tonight…</div>
+
+---
+layout: center
 transition: fade
 class: text-center
 title: "谢谢"
@@ -289,5 +339,5 @@ title: "谢谢"
 # 谢谢聆听
 
 <div class="mt-6 text-slate-500" style="font-size: 1rem;">
-全双工语音 Agent 系统 · 设计演进
+全双工语音 × 具身执行双 Agent 系统 · 设计演进
 </div>
