@@ -1,0 +1,97 @@
+# ============================================================
+# 视觉配置 (Phase 2: HSV/经典视觉 baseline)
+# 单位: 长度 meter, 角度 radian, 像素 pixel
+# 所有 HSV 阈值 / ROI / 面积 / 置信度都在这里, 禁止 hardcode。
+# 阈值针对本仓库 SyntheticCamera 的合成画面实测标定, 不是照抄网络。
+# ============================================================
+
+vision:
+  image:
+    width: 640
+    height: 480
+    # 桌面操作区域 (x0, y0, x1, y1), 图像完整坐标系。检测只在 ROI 内进行。
+    roi: [0, 0, 640, 480]
+
+  camera:
+    camera_id: camera1            # 主操作/识别视角(Phase 2 聚焦 camera1)
+    # 相机位姿(像素->世界投影用)。base frame, meter。
+    position: [0.28, 0.0, 0.55]    # 光心在世界系位置(略偏前, 带一点俯视角)
+    look_at:  [0.18, 0.0, 0.0]     # 相机 +z 指向这里(工作空间中心)
+    up:       [0.0, 0.0, 1.0]      # 世界 z 轴为上
+    # 针孔内参(像素)。fx=fy≈600 对应水平视场约 56°(640 宽)。
+    fx: 600.0
+    fy: 600.0
+
+  block:
+    side_m: 0.04                   # 物块底面边长(meter), 合成渲染用
+    half_height_m: 0.015           # 与 simulation.yaml block.half_height_m 一致
+    table_top_z_m: 0.0             # 与 robot.yaml table_top_z_m 一致
+
+  # 合成渲染的颜色(Phase 2 测试 fixture 用; 真实相机图由硬件提供)
+  table_color_bgr: [110, 110, 110]         # 灰桌面
+  block_colors_bgr:
+    red:    [0, 0, 255]
+    yellow: [0, 255, 255]
+    white:  [255, 255, 255]
+
+  # HSV 阈值(OpenCV 约定: H∈[0,180], S∈[0,255], V∈[0,255])
+  # red 跨 H=0 度边界 -> 两个区间取并集。
+  hsv_ranges:
+    red:
+      - { lower: [0, 80, 80],  upper: [10, 255, 255] }
+      - { lower: [170, 80, 80], upper: [180, 255, 255] }
+    yellow:
+      - { lower: [20, 80, 80], upper: [35, 255, 255] }
+    white:
+      # 白物块: 低饱和度 + 高亮度, 不看色相(避免与任何颜色混淆)。
+      # 排除条件: 合成相机下灰桌面 V≈110; 渲染器(Phase 3)下桌面/机身是深蓝灰
+      # (S=59..79 > 50 或 V<180), 由 mujoco_scene.py physics.visual 标定保证,
+      # 本范围在两种相机上都只命中白物块。
+      - { lower: [0, 0, 180], upper: [180, 50, 255] }
+
+  detection:
+    morphology_kernel: 3           # 形态学开/闭运算核大小; <=1 表示跳过
+    # 连通域最小面积, 过滤噪点。经 1000 随机场景标定: 工作空间最远端物块投影约
+    # 133 px^2(物块投影典型约 1900 px^2); 合成桌面零噪声, 120 不会产生误检。
+    # 真实相机噪声地板更高, 需在 Phase 2.5 用真实画面重新标定。
+    min_area_px: 120.0
+    # 填充比(area / bbox 面积)下限。经 1000 随机场景标定: 真物块 fill∈[0.27,1.0]
+    # (median 0.62), fill<0.2 的样本数为 0; 0.2 对倾斜/透视投影保留足够余量。
+    confidence_threshold: 0.2
+
+  # Phase 4 TinyDetector: 自训练微型 CNN 逐 cell 分类(训练数据=同一渲染帧)。
+  # 训练: python scripts/generate_tiny_dataset.py && python scripts/train_tiny_detector.py
+  tiny:
+    # 网格 80x60(cell=8px)。Phase 4 标定: 40x30 时模型对 0.04m 物块(~48px=3 cell)
+    # 的分类边界比物块宽(~5 cell), 概率加权质心被拉偏(演示布局白物块 x=0.24 处
+    # 手臂遮挡, 质心偏 17mm -> 抓取失败); 80x60 把模糊相对物块缩小, 质心误差回落。
+    grid_width: 80                 # 小图网格列数
+    grid_height: 60                # 小图网格行数
+    checkpoint: "models/tiny_detector.pt"   # 项目根相对路径(训练脚本输出)
+    # 连通域最小 cell 数。物块投影 ~6x6=36 cell; 背景/边缘误分类噪点常为 1-2 cell。
+    min_area_cells: 4.0
+    # cell 归属某色所需的最小 softmax 概率(低置信噪点直接丢弃)。
+    confidence_threshold: 0.5
+    # 质心只统计 >= 该概率的高置信 cell。Phase 4 标定: 手臂遮挡造成的不确定边缘
+    # cell(50-80%)会把概率加权质心拉偏(演示布局白物块 7mm -> 抓取滑落);
+    # 高置信核心才反映物块真实中心(见 tiny_detector.py probs_to_detections)。
+    centroid_prob: 0.8
+
+  # Phase 4 自训练管线参数(generate_tiny_dataset.py / train_tiny_detector.py 读)。
+  training:
+    dataset_path: "data/tiny_dataset.npz"   # 生成的数据集输出(项目根相对)
+    n_samples: 1000                         # 生成场景数(渲染 ~2ms/场景, 秒级)
+    seed: 0                                 # 固定 seed -> 数据集可复现
+    val_frac: 0.1                           # 训练/验证切分比例
+    epochs: 40                              # CPU 上秒级
+    lr: 1.0e-3
+    bg_weight: 0.25                         # 背景类损失权重(背景占 ~95% cell)
+    # 布局采样范围(世界坐标 m)。须落在机械臂可达(robot.yaml max_reach_m)+
+    # camera1 可视 + **非机身遮挡** 区域; 0.04m 物块、间距 >= min_sep_m 保证互不重叠。
+    # 实测: 相机在 (0.28,0,0.55) 俯视工作台, 机械臂 home 位遮挡 x≈0.22,y≈0 附近
+    # (Phase 4 标定发现, 见 phase4_report.md); 这里避开该区域并贴近演示抓取布局
+    # (demo 布局: red(0.26,-0.06) yellow(0.30,0.05) white(0.24,0.06))。
+    x_range: [0.24, 0.32]
+    y_range: [-0.08, 0.08]
+    min_sep_m: 0.08
+    include_prob: 0.9                       # 每色出现的概率(允许空/部分场景)

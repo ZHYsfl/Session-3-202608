@@ -1,0 +1,73 @@
+# ============================================================
+# SO-101 机械臂运动学参数
+# 坐标系: base frame (机器人底座原点), z 向上, 桌面在 z = 0
+# 单位: 长度 meter, 角度 radian
+#
+# !!! 注意: 以下为占位参数 !!!
+# 仓库中没有 SO-101 官方 URDF/DH 参数。这些参数只为让 Phase 1 全链路可运行。
+# 真机联调前必须用 SO-101 官方 URDF 或 lerobot-calibrate 校准结果替换:
+#   - links(杆长/偏移)
+#   - joints(限位 q_home / limit / vmax / accel)
+# 替换后 FK/IK 逻辑本身不需要改动。
+# ============================================================
+
+robot:
+  name: "SO-101 placeholder kinematics"
+  base_frame: "base"          # API 坐标一律是 base frame
+  coord_unit: "meter"
+
+  # FK 链: 每个关节在“上一关节坐标系”中先绕 axis 旋转 q,
+  #        再沿本地 link 向量平移到下一个关节原点。
+  # axis: "z"(pan/roll) 或 "y"(pitch)
+  #
+  # Phase 3 物理一致性修正(integration-test 证明的 bug):
+  #   旧占位几何 wrist_roll link=[0,0,0.075](工具悬在手腕上方 7.5cm), 抓取桌面上
+  #   物块(z≈0.03)时手腕必须沉到桌面以下, 物理上不可达(MuJoCo 碰撞阻挡, 运动超时)。
+  #   新几何: 工具挂手腕下方 6cm([0,0,-0.06]), 前臂加长, 使所有连杆都能保持在地面
+  #   之上抓取桌面物块。数值验证见 _mj_geometry_design.py(已删除)。
+  links:
+    - { name: shoulder_pan,  axis: z, link: [0.0,   0.0,   0.12 ] }   # 底座→lift轴(含底座高)
+    - { name: shoulder_lift, axis: y, link: [0.110, 0.0,   0.0  ] }   # lift轴→elbow轴(上臂)
+    - { name: elbow_flex,    axis: y, link: [0.140, 0.0,   0.0  ] }   # elbow轴→wrist_flex轴(前臂)
+    - { name: wrist_flex,    axis: y, link: [0.110, 0.0,   0.0  ] }   # wrist_flex轴→wrist_roll轴
+    - { name: wrist_roll,    axis: z, link: [0.0,   0.0,  -0.06 ] }   # roll轴→tool tip(夹爪末端, 朝下)
+
+  dof: 5                     # 5 个臂关节; 夹爪是第 6 个自由度(开/关)
+  max_reach_m: 0.44          # 末端可达半径上界(用于快速 fail, 不代替 IK 收敛判定)
+  table_top_z_m: 0.0         # base frame 下桌面高度; 物块中心 z = table_top + 半高
+
+  # Phase 3 碰撞守卫: 开启后 IK 只返回物理可行解(连杆不入地/不撞底座立柱)。
+  # 与 mujoco_scene.py 的底座几何(立柱 r=0.012, 顶面 z=0.090)保持一致。
+  # 默认关闭 -> Phase 1/2 纯运动学行为完全不变; MuJoCoSO101Backend 构造时
+  # 会在这个 model 实例上显式打开(物理后端必须返回可执行解)。数值由
+  # _mj_workspace*.py 扫描确定。
+  collision_guard:
+    enabled: false
+    # 守卫半径必须覆盖场景底座包络(_mj_workspace* 扫描证明的 bug):
+    #   底座立柱 r=0.012, 但底部 pedestal r=0.025 (z∈[0,0.020])。
+    #   若只按立柱 0.014 设守卫, IK 会放行实际撞 pedestal 的解(伺服卡死)。
+    #   统一取 pedestal 半径+裕量 0.027 覆盖全高(0.090) -> 保守但可达。
+    base_radius_m: 0.027      # pedestal 半径 0.025 + 裕量 0.002
+    base_z_hi_m: 0.090        # 立柱顶面高度
+    link_radius_m: 0.022      # 连杆半厚(与场景 geom 一致)
+
+  # 关节限位/速度/加速度 (占位, 需校准)
+  # Phase 3 物理一致性修正(integration-test 证明): 旧 home=[0,0.9,-1.5,-0.6,0] 的
+  # shoulder_lift=0.9 把上臂折向立柱, link2 大盒子的底边扫进底座立柱 -> MuJoCo 里
+  # reset() 后机械臂直接卡在底座上。新 home=[0,0,-1.5,0.5,0]: 上臂水平、前臂上扬,
+  # 整条链都在立柱包络之外(link_chain_clear 校验通过), 且从该姿势出发所有抓取目标
+  # 仍可由 IK 解出(见 _mj_servo_scan/phase3_report)。
+  joints:
+    - { name: shoulder_pan,  q_home:  0.0,  limit: [-3.14,  3.14], vmax: 1.5, accel: 3.0 }
+    - { name: shoulder_lift, q_home:  0.0,  limit: [-1.57,  1.57], vmax: 1.2, accel: 3.0 }
+    - { name: elbow_flex,    q_home: -1.5,  limit: [-2.70,  0.0 ], vmax: 1.2, accel: 3.0 }
+    - { name: wrist_flex,    q_home:  0.5,  limit: [-1.57,  1.57], vmax: 1.2, accel: 3.0 }
+    - { name: wrist_roll,    q_home:  0.0,  limit: [-3.14,  3.14], vmax: 3.0, accel: 6.0 }
+
+gripper:
+  # Phase 3 物理一致性修正: 物块边长 0.04m(见 vision.yaml block.side_m), 张开口径
+  # 必须能容纳物块。Phase 1/2 无真实夹爪几何(仅距离判定), 0.030 无法套住 40mm 方块,
+  # 改为 0.055(张开 27.5mm/边, 包住 40mm 方块)。闭合口径 0.012 不变。
+  aperture_open_m: 0.055       # 张开时夹爪开口
+  aperture_closed_m: 0.012     # 闭合时夹爪开口
+  grasp_depth_m: 0.020         # 夹爪中心到 tool tip 的偏移(仅文档说明用)
