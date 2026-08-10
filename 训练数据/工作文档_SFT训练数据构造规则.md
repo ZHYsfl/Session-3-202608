@@ -1,6 +1,6 @@
 # 双臂机器人 SFT 训练数据构造工作文档
 
-> 总样本数：193 | Voice Agent: 110 | Arm Agent: 83 | 全部 JSON 有效
+> 总样本数：193 | Voice Agent: 95 | Arm Agent: 98 | 全部 JSON 有效（Qwen3 原生工具调用协议，经真实 chat template 渲染验证 193/193 通过）
 
 ---
 
@@ -53,7 +53,7 @@ Arm Agent 使用 6 个工具函数，按训练维度分为 A/B/C/D 四大类。
 - 工具返回**成功类**结果（如"成功到达"、"夹取成功"、"发送成功"）
 - `queue_status` 全程 `empty`
 - assistant content 显式命名工具函数名，如 `get_current_coordinates()返回「当前坐标为(0.5,0.5,0.2)」`
-- 消息数：A1-A3, A5 为 5 条；A4 为 5 条；A6 为 14 条
+- 消息数（含 system 消息）：A1-A3, A5 常规为 6 条；A4 常规 6-12 条；A6 常规 9-24 条
 
 **构造规则（困难 1 条）：**
 - 工具返回**异常/边界**结果（如"未到达"、"夹取失败"、"当前没有新消息"）
@@ -80,9 +80,9 @@ Arm Agent 使用 6 个工具函数，按训练维度分为 A/B/C/D 四大类。
 **构造规则（常规 4 条）：**
 - 全链工具返回**均为成功**
 - `queue_status` 全程 `empty`
-- B1：4 步链 + 上报 = 17 条消息
-- B2：5 步链（含定位）+ 上报 = 20 条消息
-- B3：2 轮完整抓放链（10 步）+ 中间上报 + 最终上报 = 32 条消息
+- B1：4 步链 + 上报 = 18 条消息（含 system）
+- B2：5 步链（含定位）+ 上报 = 18 条消息（含 system）
+- B3：2 轮完整抓放链（10 步）+ 中间上报 + 最终上报 = 27-33 条消息（含 system）
 - assistant 在每步调用工具时，先解释再工具调用
 - 最终上报必须显式通过 `send_to_voice_agent()` 完成
 
@@ -114,14 +114,14 @@ Arm Agent 使用 6 个工具函数，按训练维度分为 A/B/C/D 四大类。
 - C4：release 失败 → **强制** send_to_voice_agent("释放物块失败，请人用手直接取出物块。")
 - C5：release 没夹 → 先 grab 再 release
 - C6：get 高速返回 → 再查一次 get_current_coordinates
-- `queue_status` 全程 `empty`，8-11 条消息
+- `queue_status` 全程 `empty`，9-15 条消息
 
 **构造规则（困难 1-2 条）：**
 - **相同 prompt 但首次 queue_status=not empty** → 需先消费队列
 - 消费队列后才能继续处理异常
 - C1/C2/C3 困难各 2 条（含"求助后接续"闭环样本：求助→voice 回复→继续执行）
 - C4 困难 1 条：释放失败后队列有消息，先上报再消费
-- 消息数 11-25 条
+- 消息数 9-29 条
 
 **C4 强制路径（所有语言模型的必学规则）：**
 ```
@@ -151,7 +151,7 @@ release_the_block() → 「释放物块失败，请用手直接拿出来物块�
 **构造规则（困难 1 条）：**
 - D1：包含异常工具返回（释放失败），上报求助信息
 - D2：包含重试逻辑（grab 连续失败后求助）
-- D3：更复杂的接续链条（上报→消费→执行→再上报→再消费→再执行），38 条消息
+- D3：更复杂的接续链条（上报→消费→执行→再上报→再消费→再执行），39 条消息
 
 ---
 
@@ -196,11 +196,11 @@ Voice Agent 不直接调用工具，而是**通过 send_to_arm_agent() 下发任
 - 原 4 条：用户指令完整后下发，全程 empty
 - 新增 4 条：用户首次发话时 `queue_status=not empty` → 先消费 Arm 消息 → 再澄清/下发
 - 2a 使用 `</interrupted>` 标签标记打断点
-- 消息数 9-12 条
+- 消息数 6-15 条（not_empty 消费版本更长）
 
 **构造规则（困难 2 条每个子场景）：**
 - 原 1 条 + 新增 1 条 not_empty 扩展
-- 困难特征：消费到**多条 Arm 消息**（需多次 get），或消费到的消息与用户指令**冲突/叠加**
+- 困难特征：消费到**多条 Arm 消息**（一次 get 返回全部，以 `;` 分隔），或消费到的消息与用户指令**冲突/叠加**
 - 例如：用户要黄色但 Arm 报告黄色夹取失败 → 需向用户建议替代方案
 
 ---
@@ -281,30 +281,30 @@ Voice Agent 不直接调用工具，而是**通过 send_to_arm_agent() 下发任
 | 信息重叠 | 工具返回与用户意图一致 | 工具返回与用户意图冲突 |
 
 ### 4.4 具体对比示例（A4 release_the_block）
-- **常规**：`请释放当前夹持的物块` → release → `成功释放物块` → 结束（5 条消息）
-- **困难**：`释放机械臂上夹的物块` → release → `释放物块失败` → `queue_status=not empty` → send_to_voice_agent 求助 → get_message_from_voice_agent 等待指令（11 条消息）
+- **常规**：`请释放当前夹持的物块` → release → `成功释放物块` → 结束（6 条消息，含 system）
+- **困难**：`释放机械臂上夹的物块` → release → `释放物块失败` → `queue_status=not empty` → send_to_voice_agent 求助 → get_message_from_voice_agent 等待指令（12 条消息，含 system）
 
 ---
 
 ## 五、工具返回值覆盖清单
 
-以下 13 种返回值已全部覆盖（截至 2026-08-10）：
+以下 13 种返回值已全部覆盖（截至 2026-08-10，arm 侧实测）：
 
 | # | 工具函数 | 返回值字符串 | 出现次数 |
 |---|---------|------------|---------|
-| 1 | get_current_coordinates | `当前坐标为(x,y,z)` | 17 |
-| 2 | get_current_coordinates | `我的坐标是x,y,z` | 4 |
-| 3 | move_to_coordinates | `成功到达x,y,z` | 46 |
-| 4 | move_to_coordinates | `未到达x,y,z，误差是{error}` | 8 |
+| 1 | get_current_coordinates | `当前坐标为(x,y,z)` | 21 |
+| 2 | get_current_coordinates | `我的坐标是x,y,z` | 5 |
+| 3 | move_to_coordinates | `成功到达x,y,z` | 75 |
+| 4 | move_to_coordinates | `未到达x,y,z，误差是{error}` | 10 |
 | 5 | grab_the_block | `没有这种颜色的物块，无法夹取` | 10 |
-| 6 | grab_the_block | `有这种颜色的物块，且夹取物块成功` | 47 |
-| 7 | grab_the_block | `有这种颜色的物块，但夹取物块失败` | 11 |
-| 8 | release_the_block | `本身就没加起来物块` | 1 |
-| 9 | release_the_block | `成功释放物块` | 41 |
-| 10 | release_the_block | `释放物块失败，请用手直接拿出来物块` | 9 |
-| 11 | send_to_voice_agent | `发送成功` | 145 |
-| 12 | get_message_from_voice_agent | `当前没有新消息` | 6 |
-| 13 | get_message_from_voice_agent | `all_messages_from_voice_agent:...` | 81 |
+| 6 | grab_the_block | `有这种颜色的物块，且夹取物块成功` | 55 |
+| 7 | grab_the_block | `有这种颜色的物块，但夹取物块失败` | 15 |
+| 8 | release_the_block | `本身就没加起来物块` | 7 |
+| 9 | release_the_block | `成功释放物块` | 47 |
+| 10 | release_the_block | `释放物块失败，请用手直接拿出来物块` | 8 |
+| 11 | send_to_voice_agent | `发送成功` | 84 |
+| 12 | get_message_from_voice_agent | `当前没有新消息` | 1 |
+| 13 | get_message_from_voice_agent | `all_messages_from_voice_agent:...` | 26 |
 
 ---
 
