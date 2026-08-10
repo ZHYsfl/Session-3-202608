@@ -1,0 +1,82 @@
+# ============================================================
+# 仿真场景配置 (Phase 1: 固定场景, 不做 domain randomization)
+# 物块坐标在 base frame 下; z = table_top(0) + 半高(0.015) = 0.015
+# ============================================================
+
+simulation:
+  block:
+    half_height_m: 0.015
+    colors: ["yellow", "red", "white"]
+
+  # 场景预设: 一次任务同一种颜色最多一个物块(协议约定)
+  # reset() 时按预设放置物块。Phase 2+ 会加入随机化。
+  # Phase 3: 物块移到 x>=0.22 的可达区(_mj_workspace*.py 扫描证明 x<0.22 的
+  # descend 目标需要肘部落到底座/桌面以下, 物理不可行)。相机 camera1 视场
+  # 覆盖 x∈[0.15,0.40], 移动后仍在视野内。
+  scene_presets:
+    all:                       # 三种颜色都在
+      - { color: red,    x: 0.26, y: -0.06, z: 0.015, yaw: 0.0 }
+      - { color: yellow, x: 0.30, y:  0.05, z: 0.015, yaw: 0.5 }
+      - { color: white,  x: 0.24, y:  0.06, z: 0.015, yaw: 1.2 }
+    red_only:
+      - { color: red,    x: 0.26, y:  0.0,  z: 0.015, yaw: 0.0 }
+    red_yellow:
+      - { color: red,    x: 0.26, y: -0.06, z: 0.015, yaw: 0.0 }
+      - { color: yellow, x: 0.30, y:  0.07, z: 0.015, yaw: 0.4 }
+    white_yellow:
+      - { color: yellow, x: 0.28, y: -0.06, z: 0.015, yaw: 0.3 }
+      - { color: white,  x: 0.25, y:  0.07, z: 0.015, yaw: 0.9 }
+    unreachable_block:         # 测试用: 物块在机械臂工作空间外
+      - { color: red,    x: 0.80, y:  0.80, z: 0.015, yaw: 0.0 }
+    no_blocks: []
+
+  # 相机(Phase 2 使用, 当前为占位定义)
+  camera1:                     # 主操作/识别视角
+    pose: { x: 0.30, y: 0.0,  z: 0.45, yaw: 3.1416, pitch: 1.2 }
+  camera2:                     # 第三视角验证抓取/释放
+    pose: { x: -0.30, y: 0.35, z: 0.50, yaw: 0.9,  pitch: 1.0 }
+
+  # Phase 3 物理参数(MuJoCo)。物块几何以 vision.yaml block.* 为准(边长 0.04, 半高 0.015)。
+  physics:
+    timestep: 0.002            # MuJoCo 积分步长(s); 控制步 dt=0.02 内跑 10 子步
+    gravity: -9.81             # z 方向重力加速度 (m/s^2)
+    solver: "Newton"           # 接触求解器: Newton(刚性好) | PGS
+    iterations: 50
+    cube_mass_kg: 0.03         # 物块质量
+    friction_block: 0.6        # 物块-桌面 摩擦系数
+    friction_finger: 1.0       # 夹爪指垫-物块 摩擦系数(抓取用, 高摩擦)
+    arm_density: 1500.0        # 臂杆密度 (kg/m^3)
+    arm_kp: 200.0              # 关节力矩 PD 刚度(backed.step 内, motor 执行器)
+    arm_kv: 10.0               # 关节力矩 PD 阻尼(作用在速度误差上, 带前馈)
+    arm_force_limit: 8.0       # 默认关节最大力矩 (N·m), 被 arm_force_limits 覆盖
+    # 每关节力矩上限(按保持力矩 2-3 倍取)。手腕惯量小(0.014), 若力矩上限过大,
+    # 50Hz 外层一步内就能把手腕甩出可控范围 -> bang-bang 极限环(集成测试证明)。
+    arm_force_limits: [0.5, 4.0, 2.0, 1.0, 0.5]   # pan/lift/elbow/wflex/wroll
+    arm_armature: 0.01         # 关节 armature(电机转子惯量)。0.0005 会使手腕关节
+                               # ω·dt>2 积分失稳(伺服挂不住姿势, 集成测试证明);
+                               # 0.01 让所有臂关节 ω·dt<1, 位置伺服稳定。
+    gripper_kp: 200.0
+    gripper_kv: 10.0
+    gripper_force_limit: 4.0
+    gripper_settle_steps: 250  # 夹爪动作后的物理稳定子步数(≈0.5s)。FINAL ACCEPTANCE AUDIT
+                               # 修复: 150(0.3s)在夹住物块后高位释放时不够 —— 物块从 ~0.19m
+                               # 掉下需 ~0.35s 才能落定(integration 实测 cube_z 0.0222>0.019
+                               # 仍被 is_holding 判为"抬起"), 释放验证在物块仍在落定时采样
+                               # -> 偶发误报"释放物块失败"。250(0.5s)覆盖 0.24s 下落 + 裕量。
+    # 渲染光照(Phase 3 视觉标定, 见 docs/progress/phase3_report.md 视觉章节)。
+    # 主光 + 补光均为平行光(light_type=1)。数值经 renderer 帧实测: 让白物块
+    # (rgba 0.95) 高亮 V=255 命中白 HSV, 桌面/机身靠深蓝灰材质(S>50)排除。
+    lighting:
+      ambient_main: 0.35
+      diffuse_main: 0.35
+      ambient_fill: 0.14
+      diffuse_fill: 0.14
+    # 渲染材质颜色(Phase 3 视觉标定)。白物块 HSV 范围 [0,0,180]-[180,50,255]
+    # 只靠 V/S 排除误检: 桌面/机身必须渲染成深蓝灰(S>50), 不能是浅灰/白。
+    # 实测标定: 0.55 灰 -> 桌面 V≈247 整屏误检; 下面这组 -> 桌面/机身 S=59..79
+    # 全排除, 白掩码只剩白物块(~2200px, 中心与 GT 差 <3px)。
+    visual:
+      arm_rgba: "0.20 0.22 0.32 1"     # 机械臂连杆(SO-101 深色机身)
+      base_rgba: "0.16 0.17 0.24 1"    # 底座/立柱
+      table_rgba: "0.26 0.29 0.38 1"   # 桌面(深蓝灰)
+      floor_rgba: "0.14 0.15 0.19 1"   # 地板

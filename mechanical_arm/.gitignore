@@ -1,0 +1,38 @@
+# SO-101 mechanical arm module ignores
+# (repo-root .gitignore also applies; this covers module-local runtime artifacts)
+
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+logs/
+
+# Temp / scratch / runtime outputs
+tmp/
+temp/
+outputs/
+runs/
+
+# Archives
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Environments
+.venv/
+venv/
+.env
+
+# Training-only artifacts (runtime never loads these; final models live in models/)
+data/
