@@ -1,0 +1,12 @@
+{
+    "id": "paper_002",
+    "title": "Training language models to follow instructions with human feedback",
+    "year": "2022",
+    "source_type": "conference",
+    "text": "We present InstructGPT, a method for aligning language models with user intent through fine-tuning with human feedback. Our results show that InstructGPT models are preferred over GPT-3 despite having 100x fewer parameters, with improvements in truthfulness and reductions in toxic output generation.",
+    "text_summary": "InstructGPT aligns LLMs with human intent via RLHF fine-tuning, outperforming larger models.",
+    "image_summary": ["RLHF training pipeline", "Human preference comparison chart"],
+    "image_base_64": ["base64_rlhf_1", "base64_rlhf_2"],
+    "evidence_level": ["strong", "strong"],
+    "last_retrieved_at": null
+}

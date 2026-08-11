@@ -1,0 +1,12 @@
+{
+    "id": "paper_006",
+    "title": "Graph Neural Networks for Drug Discovery: A Comprehensive Survey",
+    "year": "2021",
+    "source_type": "journal",
+    "text": "This survey provides a comprehensive review of graph neural network applications in drug discovery. We systematically categorize existing methods into molecular property prediction, drug-target interaction prediction, and de novo molecular generation, analyzing their strengths and limitations across benchmark datasets.",
+    "text_summary": "Survey of GNN applications in drug discovery covering property prediction and molecular generation.",
+    "image_summary": ["GNN drug discovery taxonomy", "Benchmark performance summary table"],
+    "image_base_64": ["base64_gnn_1", "base64_gnn_2"],
+    "evidence_level": ["moderate", "moderate"],
+    "last_retrieved_at": null
+}

@@ -1,0 +1,12 @@
+{
+    "id": "paper_004",
+    "title": "LLaMA: Open and Efficient Foundation Language Models",
+    "year": "2023",
+    "source_type": "journal",
+    "text": "We introduce LLaMA, a collection of foundation language models ranging from 7B to 65B parameters. We train our models on trillions of tokens using publicly available datasets exclusively, making it possible to achieve state-of-the-art performance without relying on proprietary data.",
+    "text_summary": "LLaMA: open-source foundation LLMs trained on public data achieve state-of-the-art results.",
+    "image_summary": ["LLaMA training loss curves", "Benchmark comparison across model sizes"],
+    "image_base_64": ["base64_llama_1", "base64_llama_2"],
+    "evidence_level": ["strong", "strong"],
+    "last_retrieved_at": null
+}
