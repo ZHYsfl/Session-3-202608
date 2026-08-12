@@ -167,3 +167,7 @@ node_modules/
 ppt/example/
 
 .local-libs/
+
+chroma_db/
+
+__pycache__/
