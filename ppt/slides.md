@@ -167,7 +167,7 @@ title: "改进三：异步 Agent 系统"
 </div>
 
 <div class="w-full flex justify-center" style="margin-top: 0.8rem;">
-  <img src="./pics/3.png" alt="异步 Agent 系统工作原理" style="max-width: 90%; max-height: 300px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 10px;" />
+  <img src="./pics/3.png" alt="异步 Agent 系统工作原理" style="max-width: 92%; max-height: 330px; object-fit: contain; border: 1px solid #e5e7eb; border-radius: 10px;" />
 </div>
 
 <div class="max-w-5xl mx-auto px-10 text-left" style="margin-top: 1rem; font-size: 0.85rem; line-height: 1.6; color: #4b5563;">
