@@ -1,0 +1,42 @@
+{
+  "query": "Does metformin improve outcomes in patients with type 2 diabetes?",
+  "k1": 3,
+  "metadatas": [
+    {
+      "id": "paper_1501",
+      "title": "Metformin and Clinical Outcomes in Type 2 Diabetes",
+      "year": "2024",
+      "source_type": "clinical_trial",
+      "text_summary": "A clinical trial evaluating the effects of metformin on glycemic control and clinical outcomes in patients with type 2 diabetes.",
+      "text": "We evaluated whether metformin treatment improves clinical outcomes in adults with type 2 diabetes.",
+      "evidence_level": "high"
+    },
+    {
+      "id": "paper_1502",
+      "title": "Treatment Options for Type 2 Diabetes",
+      "year": "2023",
+      "source_type": "review",
+      "text_summary": "A review of pharmacological treatments for type 2 diabetes.",
+      "text": "Several glucose-lowering therapies are available for patients with type 2 diabetes.",
+      "evidence_level": "medium"
+    },
+    {
+      "id": "paper_1503",
+      "title": "Metformin: Mechanisms of Action",
+      "year": "2022",
+      "source_type": "paper",
+      "text_summary": "Mechanisms through which metformin affects glucose metabolism.",
+      "text": "Metformin reduces hepatic glucose production and improves insulin sensitivity.",
+      "evidence_level": "medium"
+    },
+    {
+      "id": "paper_1504",
+      "title": "Diabetes Mellitus: An Overview",
+      "year": "2020",
+      "source_type": "review",
+      "text_summary": "General overview of diabetes mellitus.",
+      "text": "Diabetes is a chronic metabolic disease affecting millions of people.",
+      "evidence_level": "medium"
+    }
+  ]
+}

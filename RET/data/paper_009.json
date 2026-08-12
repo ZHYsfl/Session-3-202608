@@ -1,0 +1,12 @@
+{
+    "id": "paper_009",
+    "title": "Generating Long Sequences with Sparse Transformers for Language Modeling",
+    "year": "2019",
+    "source_type": "journal",
+    "text": "We introduce Sparse Transformer, which uses sparse factorizations of the attention matrix to reduce the quadratic complexity of standard self-attention. We demonstrate that sparse transformers can model sequences with tens of thousands of timesteps, achieving state-of-the-art results in density modeling of text, images, and audio waveforms.",
+    "text_summary": "Sparse Transformer reduces attention complexity for long-sequence language modeling and generation.",
+    "image_summary": ["Sparse attention pattern diagram", "Sequence length vs perplexity plot"],
+    "image_base_64": ["base64_sparse_1", "base64_sparse_2"],
+    "evidence_level": ["strong", "moderate"],
+    "last_retrieved_at": null
+}
