@@ -8,10 +8,28 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+
+# 优先从当前目录或项目根目录加载 .env，便于直接运行评测脚本
+_dotenv_paths = [
+    Path(__file__).resolve().parent / ".env",
+    Path(__file__).resolve().parent.parent.parent.parent / ".env",
+    Path(__file__).resolve().parent.parent.parent.parent / "RET" / ".env",
+]
+for _dotenv_path in _dotenv_paths:
+    if _dotenv_path.exists():
+        try:
+            from dotenv import load_dotenv
+
+            load_dotenv(dotenv_path=_dotenv_path, override=True)
+        except Exception:
+            pass
+        break
 
 
 @dataclass(frozen=True)
@@ -61,6 +79,8 @@ def _post_json(url: str, api_key: str, payload: dict[str, Any], timeout: int) ->
         raise ModelAPIError(f"HTTP {exc.code}: {body}") from exc
     except urllib.error.URLError as exc:
         raise ModelAPIError(f"无法连接模型API: {exc.reason}") from exc
+    except (socket.timeout, TimeoutError) as exc:
+        raise ModelAPIError(f"请求模型API超时({timeout}s): {exc}") from exc
 
 
 def _responses_output_text(response: dict[str, Any]) -> str:
@@ -123,6 +143,7 @@ def generate_text(config: ModelConfig, system_prompt: str, user_prompt: str) -> 
 
 def parse_json_output(text: str) -> dict[str, Any]:
     cleaned = text.strip()
+    # 去除可能的 markdown 代码块标记（兼容未闭合的情况）
     if cleaned.startswith("```"):
         lines = cleaned.splitlines()
         if lines and lines[0].startswith("```"):
@@ -130,10 +151,26 @@ def parse_json_output(text: str) -> dict[str, Any]:
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
         cleaned = "\n".join(lines).strip()
+    # 尝试直接解析
     try:
         value = json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        raise ModelAPIError(f"模型没有返回合法JSON: {exc}") from exc
+    except json.JSONDecodeError:
+        # 二次尝试：提取第一个 { ... } 或 [ ... ] 结构
+        for prefix, suffix in [("{", "}"), ("[", "]")]:
+            start = cleaned.find(prefix)
+            if start == -1:
+                continue
+            end = cleaned.rfind(suffix)
+            if end == -1 or end <= start:
+                continue
+            candidate = cleaned[start : end + 1]
+            try:
+                value = json.loads(candidate)
+                break
+            except json.JSONDecodeError:
+                continue
+        else:
+            raise ModelAPIError(f"模型没有返回合法JSON: {cleaned[:200]}")
     if not isinstance(value, dict):
         raise ModelAPIError("模型JSON输出必须是对象")
     return value
