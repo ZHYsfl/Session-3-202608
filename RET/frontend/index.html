@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>证据智能助手 — Evidence Intelligence</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --border: #475569;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --accent: #3b82f6;
+    --accent2: #10b981;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --clinical: #3b82f6;
+    --nutrition: #10b981;
+    --database: #8b5cf6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ─── Header ────────────────────────────── */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .header h1 { font-size: 1.25rem; font-weight: 700; }
+  .header .subtitle { color: var(--text2); font-size: 0.85rem; }
+
+  /* ─── Tabs ─────────────────────────────── */
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0 24px;
+  }
+  .tab-btn {
+    padding: 12px 24px;
+    background: none;
+    border: none;
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab-btn.track-clinical.active { color: var(--clinical); border-bottom-color: var(--clinical); }
+  .tab-btn.track-nutrition.active { color: var(--nutrition); border-bottom-color: var(--nutrition); }
+  .tab-btn.track-database.active { color: var(--database); border-bottom-color: var(--database); }
+
+  /* ─── Main content ──────────────────────── */
+  .main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ─── Search bar ────────────────────────── */
+  .search-section {
+    margin-bottom: 24px;
+  }
+  .search-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .search-input {
+    flex: 1;
+    min-width: 300px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+  .search-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+  }
+  .btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: #2563eb; }
+  .btn-green { background: var(--accent2); color: white; }
+  .btn-green:hover { background: #059669; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn-outline:hover { background: var(--surface2); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ─── Tool call trace ───────────────────── */
+  .tool-trace {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .tool-trace-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text2);
+    user-select: none;
+  }
+  .tool-trace-header:hover { background: var(--surface2); }
+  .tool-trace-header .chevron { transition: transform 0.2s; font-size: 0.7rem; }
+  .tool-trace-header.open .chevron { transform: rotate(90deg); }
+  .tool-trace-body {
+    display: none;
+    padding: 0 16px 12px;
+  }
+  .tool-trace-body.show { display: block; }
+  .tool-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(71,85,105,0.4);
+    font-size: 0.82rem;
+  }
+  .tool-step:last-child { border-bottom: none; }
+  .tool-step .step-icon {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+  }
+  .step-local { background: rgba(59,130,246,0.2); color: var(--clinical); }
+  .step-pubmed { background: rgba(245,158,11,0.2); color: var(--warn); }
+  .step-info { color: var(--text2); }
+  .step-round-badge {
+    display: inline-block;
+    background: var(--surface2);
+    color: var(--text2);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    margin-right: 4px;
+  }
+
+  /* ─── Answer area ───────────────────────── */
+  .answer-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .answer-text {
+    font-size: 0.95rem;
+    line-height: 1.8;
+    white-space: pre-wrap;
+  }
+  .answer-text .citation {
+    color: var(--accent);
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .answer-text .citation:hover { text-decoration: underline; }
+
+  /* ─── Evidence cards ────────────────────── */
+  .evidence-section {
+    margin-top: 24px;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+  .evidence-section h3 {
+    font-size: 0.9rem;
+    color: var(--text2);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .evidence-card {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+    border-left: 3px solid var(--border);
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .evidence-card:hover { border-left-color: var(--accent); background: #2d3a50; }
+  .evidence-card.external { border-left-color: var(--warn); }
+  .evidence-card.external:hover { border-left-color: var(--warn); }
+  .evidence-card .ec-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .evidence-card .ec-index {
+    background: var(--accent);
+    color: white;
+    min-width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+  .evidence-card.external .ec-index { background: var(--warn); }
+  .evidence-card .ec-title { flex: 1; font-weight: 600; }
+  .evidence-card .ec-meta {
+    color: var(--text2);
+    font-size: 0.8rem;
+    margin-top: 4px;
+  }
+  .evidence-card .ec-score {
+    font-size: 0.75rem;
+    color: var(--accent2);
+    font-weight: 600;
+  }
+  .evidence-card .ec-link {
+    display: inline-block;
+    margin-top: 6px;
+    color: var(--accent);
+    font-size: 0.8rem;
+    text-decoration: none;
+  }
+  .evidence-card .ec-link:hover { text-decoration: underline; }
+
+  /* ─── Verification badge ────────────────── */
+  .verify-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-right: 8px;
+    margin-bottom: 8px;
+  }
+  .verify-good { background: rgba(16,185,129,0.15); color: var(--accent2); }
+  .verify-warn { background: rgba(245,158,11,0.15); color: var(--warn); }
+  .verify-bad { background: rgba(239,68,68,0.15); color: var(--danger); }
+
+  /* ─── Database explorer ─────────────────── */
+  .db-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+  .stat-card .stat-value { font-size: 2rem; font-weight: 700; color: var(--database); }
+  .stat-card .stat-label { color: var(--text2); font-size: 0.85rem; margin-top: 4px; }
+
+  .result-list { display: flex; flex-direction: column; gap: 12px; }
+  .result-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .result-item:hover { border-color: var(--accent); }
+  .result-item .ri-title { font-weight: 600; margin-bottom: 4px; }
+  .result-item .ri-meta { color: var(--text2); font-size: 0.82rem; }
+  .result-item .ri-summary { font-size: 0.88rem; margin-top: 8px; color: var(--text2); line-height: 1.5; }
+
+  /* ─── Loading ───────────────────────────── */
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text2);
+    font-size: 0.9rem;
+    padding: 24px;
+  }
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Modal ─────────────────────────────── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 700px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .modal h2 { margin-bottom: 12px; }
+  .modal .close-btn {
+    float: right;
+    background: none;
+    border: none;
+    color: var(--text2);
+    font-size: 1.5rem;
+    cursor: pointer;
+  }
+  .modal .close-btn:hover { color: var(--text); }
+
+  /* ─── Markdown-ish ──────────────────────── */
+  .answer-text h3 { font-size: 1.1rem; margin: 16px 0 8px; color: var(--accent); }
+  .answer-text strong { color: var(--text); }
+  .answer-text ul, .answer-text ol { padding-left: 20px; margin: 8px 0; }
+  .answer-text li { margin: 4px 0; }
+
+  /* ─── Hint text ─────────────────────────── */
+  .search-hint {
+    font-size: 0.8rem;
+    color: var(--text2);
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>📋 证据智能助手</h1>
+    <div class="subtitle">Evidence Intelligence — 本地库 + PubMed 实时检索 · Agent 自主决策</div>
+  </div>
+</div>
+
+<!-- ─── Tab Bar ──────────────────────────── -->
+<div class="tab-bar">
+  <button class="tab-btn track-clinical active" onclick="switchTab('clinical')">
+    🩺 临床证据助手
+  </button>
+  <button class="tab-btn track-nutrition" onclick="switchTab('nutrition')">
+    🥗 健康营养助手
+  </button>
+  <button class="tab-btn track-database" onclick="switchTab('database')">
+    📚 数据库浏览
+  </button>
+</div>
+
+<!-- ─── Main Content ─────────────────────── -->
+<div class="main">
+
+  <!-- Track 1: Clinical -->
+  <div id="tab-clinical" class="tab-content active">
+    <div class="search-section">
+      <div class="search-row">
+        <input id="clinical-query" class="search-input" placeholder="例：高血压患者长期服药有哪些指南依据？"
+               onkeydown="if(event.key==='Enter') doSearch('clinical')">
+        <button class="btn btn-primary" onclick="doSearch('clinical')">🔍 检索证据</button>
+      </div>
+      <div class="search-hint">🩺 自动检索本地数据库 (ChromaDB) + PubMed 外部文献 · Agent 自主判断证据充分性</div>
+    </div>
+    <div id="clinical-result"></div>
+  </div>
+
+  <!-- Track 2: Nutrition -->
+  <div id="tab-nutrition" class="tab-content">
+    <div class="search-section">
+      <div class="search-row">
+        <input id="nutrition-query" class="search-input" placeholder="例：地中海饮食对心血管有什么证据？"
+               onkeydown="if(event.key==='Enter') doSearch('nutrition')">
+        <button class="btn btn-green" onclick="doSearch('nutrition')">🥗 检索证据</button>
+      </div>
+      <div class="search-hint">🥗 自动检索本地数据库 (ChromaDB) + PubMed 外部文献 · Agent 自主判断证据充分性</div>
+    </div>
+    <div id="nutrition-result"></div>
+  </div>
+
+  <!-- Track 3: Database Explorer -->
+  <div id="tab-database" class="tab-content">
+    <div id="db-stats-container" class="db-stats"></div>
+    <div class="search-section">
+      <div class="search-row">
+        <input id="db-query" class="search-input" placeholder="搜索论文标题、摘要、关键词..."
+               onkeydown="if(event.key==='Enter') doSearch('database')">
+        <button class="btn btn-outline" onclick="doSearch('database')" style="border-color:var(--database);color:var(--database)">🔎 搜索</button>
+      </div>
+    </div>
+    <div id="db-result" class="result-list"></div>
+  </div>
+
+</div>
+
+<!-- ─── Paper Detail Modal ───────────────── -->
+<div class="modal-overlay" id="paper-modal">
+  <div class="modal">
+    <button class="close-btn" onclick="closeModal()">×</button>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<script>
+const API = '';
+
+async function doSearch(track) {
+  const queryEl = document.getElementById(`${track}-query`);
+  const query = queryEl.value.trim();
+  if (!query) return;
+
+  const resultEl = document.getElementById(`${track}-result`);
+  resultEl.innerHTML = '<div class="loading"><div class="spinner"></div>检索中...（本地库 + PubMed 双路搜索）</div>';
+
+  try {
+    if (track === 'database') {
+      // 纯检索模式
+      const resp = await fetch(`${API}/api/search`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({query, track: 'clinical'}),
+      });
+      const data = await resp.json();
+      renderDatabaseResults(data.results || []);
+    } else {
+      // Agent 模式 — 自动双路检索
+      const resp = await fetch(`${API}/api/chat`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({query, track}),
+      });
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.detail || resp.statusText);
+      }
+      const data = await resp.json();
+      renderAgentResult(track, data);
+    }
+  } catch (err) {
+    resultEl.innerHTML = `<div class="answer-card" style="color:var(--danger)">
+      <strong>❌ 错误</strong><br><br>${escapeHtml(err.message)}
+      <br><br><span style="font-size:0.8rem;color:var(--text2)">请稍后重试，或尝试更具体的查询。如持续出错，请联系管理员。</span>
+    </div>`;
+  }
+}
+
+function renderToolCalls(toolCalls) {
+  if (!toolCalls || toolCalls.length === 0) return '';
+
+  const actionLabels = {
+    'search_local': '🔍',
+    'search_pubmed': '🌐',
+    'get_paper': '📄',
+  };
+  const sourceLabels = {
+    'search_local': 'step-local',
+    'search_pubmed': 'step-pubmed',
+    'get_paper': 'step-local',
+  };
+
+  let currentRound = 0;
+  let stepsHtml = toolCalls.map(t => {
+    let roundBadge = '';
+    if (t.round !== currentRound) {
+      currentRound = t.round;
+      roundBadge = `<span class="step-round-badge">R${t.round}</span>`;
+    }
+    const icon = actionLabels[t.action] || '🔧';
+    const cls = sourceLabels[t.action] || 'step-local';
+    const dur = t.duration_ms > 0 ? ` <span class="step-info">(${(t.duration_ms/1000).toFixed(1)}s)</span>` : '';
+    return `
+      <div class="tool-step">
+        <div class="step-icon ${cls}">${icon}</div>
+        <div>
+          ${roundBadge}<strong>${t.action === 'search_local' ? '本地检索' : t.action === 'search_pubmed' ? 'PubMed检索' : t.action}</strong>
+          <span class="step-info">→ "${escapeHtml(t.query.length > 50 ? t.query.substring(0,50)+'...' : t.query)}"</span>
+          <span style="color:var(--text2)"> — ${t.result_count} 条结果</span>
+          ${t.source ? `<span class="step-info"> · ${escapeHtml(t.source)}</span>` : ''}${dur}
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="tool-trace">
+      <div class="tool-trace-header" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('show')">
+        <span class="chevron">▶</span>
+        <span>🔧 工具调用追踪 (${toolCalls.length} 步, ${currentRound} 轮)</span>
+      </div>
+      <div class="tool-trace-body show">
+        ${stepsHtml}
+      </div>
+    </div>`;
+}
+
+function renderAgentResult(track, data) {
+  const resultEl = document.getElementById(`${track}-result`);
+
+  // 工具调用追踪
+  const toolTraceHtml = renderToolCalls(data.tool_calls);
+
+  // 验证徽章
+  let verifyBadges = '';
+  if (data.verification) {
+    const v = data.verification;
+    const existRate = v.citation_existence_rate || 0;
+    const faithScore = v.faithfulness_score || 0;
+    const existCls = existRate >= 0.9 ? 'verify-good' : existRate >= 0.5 ? 'verify-warn' : 'verify-bad';
+    const faithCls = faithScore >= 0.7 ? 'verify-good' : faithScore >= 0.4 ? 'verify-warn' : 'verify-bad';
+    verifyBadges = `
+      <div style="margin-bottom:12px">
+        <span class="verify-badge ${existCls}">📋 引用存在率 ${(existRate*100).toFixed(0)}% (${v.real_citations}/${v.total_citations})</span>
+        <span class="verify-badge ${faithCls}">✅ 陈述支撑度 ${(faithScore*100).toFixed(0)}% (${v.supported_claims}/${v.total_claims})</span>
+      </div>`;
+  }
+
+  // 处理引用标记
+  let answerHtml = escapeHtml(data.answer)
+    .replace(/\[(\d+)\]/g, '<sup class="citation" onclick="scrollToCard($1)">[$1]</sup>')
+    .replace(/\[ext(\d+)\]/g, '<sup class="citation" style="color:#f59e0b" onclick="scrollToCard(\'ext$1\')">[ext$1]</sup>')
+    .replace(/\n/g, '<br>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>');
+
+  let cardsHtml = '';
+  if (data.evidence_cards && data.evidence_cards.length > 0) {
+    cardsHtml = '<div class="evidence-section"><h3>📎 证据来源</h3>';
+    for (const c of data.evidence_cards) {
+      const extClass = c.source === 'external' ? ' external' : '';
+      const linkHtml = c.link ? `<a class="ec-link" href="${c.link}" target="_blank" rel="noopener">🔗 查看原文 →</a>` : '';
+      const scoreHtml = c.similarity_score > 0 ? ` 相似度: ${(c.similarity_score*100).toFixed(1)}%` : '';
+      cardsHtml += `
+        <div class="evidence-card${extClass}" id="card-${c.index}" onclick="showPaperDetail('${c.pmid}')">
+          <div class="ec-header">
+            <span class="ec-index">${c.index}</span>
+            <span class="ec-title">${escapeHtml(c.title)}</span>
+            <span class="ec-score">${scoreHtml}</span>
+          </div>
+          <div class="ec-meta">
+            ${escapeHtml(c.source_type)} | ${c.year} | PMID: ${escapeHtml(c.pmid)}
+            ${c.source === 'external' ? ' | <span style="color:#f59e0b">PubMed 外部</span>' : ' | <span style="color:#3b82f6">本地库</span>'}
+          </div>
+          ${c.summary_snippet ? `<div style="color:var(--text2);font-size:0.82rem;margin-top:4px">${escapeHtml(c.summary_snippet)}...</div>` : ''}
+          ${linkHtml}
+        </div>`;
+    }
+    cardsHtml += '</div>';
+  }
+
+  resultEl.innerHTML = `
+    ${toolTraceHtml}
+    <div class="answer-card">
+      ${verifyBadges}
+      <div class="answer-text">${answerHtml}</div>
+      ${cardsHtml}
+    </div>`;
+}
+
+function renderDatabaseResults(results) {
+  const el = document.getElementById('db-result');
+  if (!results.length) {
+    el.innerHTML = '<div class="answer-card" style="color:var(--text2)">未找到匹配结果</div>';
+    return;
+  }
+  el.innerHTML = results.map((r, i) => `
+    <div class="result-item" onclick="showPaperDetail('${r.paper_id}')">
+      <div class="ri-title">${i+1}. ${escapeHtml(r.title)}</div>
+      <div class="ri-meta">${escapeHtml(r.source_type || 'N/A')} | ${r.year || 'N/A'} | PMID: ${r.paper_id} | 相似度: ${(r.score*100).toFixed(1)}%</div>
+      <div class="ri-summary">${escapeHtml((r.text_summary || '').substring(0, 250))}...</div>
+    </div>
+  `).join('');
+}
+
+async function showPaperDetail(paperId) {
+  const modal = document.getElementById('paper-modal');
+  const content = document.getElementById('modal-content');
+  modal.classList.add('show');
+  content.innerHTML = '<div class="loading"><div class="spinner"></div>加载中...</div>';
+
+  try {
+    const resp = await fetch(`${API}/api/papers/${paperId}`);
+    if (!resp.ok) throw new Error('Paper not found');
+    const p = await resp.json();
+    content.innerHTML = `
+      <h2>${escapeHtml(p.title)}</h2>
+      <div style="color:var(--text2);margin-bottom:12px">
+        📅 ${p.year} | 📚 ${escapeHtml(p.source_type || 'N/A')} | 🆔 ${p.id}
+      </div>
+      <h4>📝 摘要</h4>
+      <p style="line-height:1.7">${escapeHtml(p.text_summary || '无摘要')}</p>
+      <h4>📖 全文预览</h4>
+      <p style="line-height:1.7;color:var(--text2);max-height:300px;overflow-y:auto">${escapeHtml(p.text || '无全文')}</p>
+      <h4>🖼️ 图片摘要</h4>
+      ${(p.image_summary || []).map((img, i) => `<p style="font-size:0.85rem;color:var(--text2);margin:4px 0">[${i+1}] ${escapeHtml(img).substring(0, 200)}...</p>`).join('')}
+      <p style="font-size:0.8rem;color:var(--text2);margin-top:8px">🖼️ 附带 ${p.image_base_64_count || 0} 张原始图片</p>
+    `;
+  } catch (err) {
+    content.innerHTML = `<p style="color:var(--danger)">加载失败: ${err.message}</p>`;
+  }
+}
+
+function closeModal() {
+  document.getElementById('paper-modal').classList.remove('show');
+}
+
+function scrollToCard(idx) {
+  const el = document.getElementById(`card-${idx}`);
+  if (el) { el.scrollIntoView({behavior:'smooth',block:'center'}); el.style.background = '#2d3a50'; setTimeout(()=>el.style.background='',1500); }
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  document.querySelector(`.tab-btn.track-${tab}`).classList.add('active');
+  if (tab === 'database') loadStats();
+}
+
+async function loadStats() {
+  try {
+    const resp = await fetch(`${API}/api/stats`);
+    const stats = await resp.json();
+    document.getElementById('db-stats-container').innerHTML = `
+      <div class="stat-card"><div class="stat-value">${stats.total_papers}</div><div class="stat-label">论文总数</div></div>
+      <div class="stat-card"><div class="stat-value">${stats.total_chunks.toLocaleString()}</div><div class="stat-label">向量 Chunks</div></div>
+      <div class="stat-card"><div class="stat-value">${stats.year_range}</div><div class="stat-label">年份范围</div></div>
+      <div class="stat-card"><div class="stat-value">${stats.source_type_count}</div><div class="stat-label">来源期刊数</div></div>
+    `;
+  } catch(e) { /* ignore */ }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// 初始加载
+loadStats();
+
+// 点击 Modal 背景关闭
+document.getElementById('paper-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+
+</body>
+</html>

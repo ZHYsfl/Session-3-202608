@@ -1,3 +1,11 @@
+"""
+医学概念感知检索器 — 融合 retriever_015 的分字段评分策略
+- 医学概念归一化 (medical_concepts)
+- 分字段加权评分 (title/summary/text/image)
+- 实体/方面/约束检测
+- 证据等级 + 来源类型质量加权
+- 通用词惩罚 (generic_penalty)
+"""
 from __future__ import annotations
 
 import math
@@ -18,8 +26,8 @@ from medical_concepts import (
     normalize_medical_text,
     specific_disease_concepts_in_query,
 )
-from metadata import Metadata
-from tokenizer import content_tokens
+from retriever import Metadata
+from tokenizer_v2 import content_tokens
 
 _FIELD_WEIGHTS = {
     "title": 0.30,
@@ -152,9 +160,7 @@ def _bigram_cooccur(query_tokens: list[str], field_tokens: list[str]) -> float:
     pairs = list(zip(query_tokens, query_tokens[1:]))
     if not pairs:
         return 0.0
-    hits = sum(
-        1 for a, b in pairs if _token_match(a, fset) and _token_match(b, fset)
-    )
+    hits = sum(1 for a, b in pairs if _token_match(a, fset) and _token_match(b, fset))
     return hits / len(pairs)
 
 
@@ -170,10 +176,7 @@ def _normalize_bm25(raw: list[float]) -> list[float]:
     return [(v - mn) / (mx - mn) if v > 0 else 0.0 for v in raw]
 
 
-def _field_bm25_scores(
-    field_docs: list[list[str]],
-    query_tokens: list[str],
-) -> list[float]:
+def _field_bm25_scores(field_docs: list[list[str]], query_tokens: list[str]) -> list[float]:
     n = len(field_docs)
     if n == 0 or not query_tokens:
         return [0.0] * n
@@ -209,10 +212,8 @@ def _generic_only_penalty(
     specific_diseases: list[str],
     normalized_field: str,
 ) -> float:
-    """If query has specific disease concepts but field only matches generics, penalize."""
     if not specific_diseases:
         return 1.0
-    # Did field hit any specific disease concept?
     for disease in specific_diseases:
         if entity_in_doc(disease, normalized_field, field_tokens):
             return 1.0
@@ -220,24 +221,18 @@ def _generic_only_penalty(
     matched_q = [t for t in query_tokens if _token_match(t, fset)]
     if not matched_q:
         return 1.0
-    # All matched query tokens are generic (or modality-only)?
     non_generic = [
-        t
-        for t in matched_q
+        t for t in matched_q
         if t not in GENERIC_MATCH_TOKENS
         and not t.startswith("__med_")
         and len(t) > 2
     ]
-    # __med_ concepts that are diseases count as specific — already handled above
     med_hits = [t for t in matched_q if t.startswith("__med_")]
     if med_hits:
         return 1.0
     if matched_q and not non_generic:
         return 0.35
-    # matched only generics + short tokens
-    if matched_q and all(
-        t in GENERIC_MATCH_TOKENS or len(t) <= 3 for t in matched_q
-    ):
+    if matched_q and all(t in GENERIC_MATCH_TOKENS or len(t) <= 3 for t in matched_q):
         return 0.35
     return 1.0
 
@@ -254,33 +249,23 @@ def _image_field_score(
         return 0.0
     q_mod = detect_modality_terms(query_norm)
     i_mod = detect_modality_terms(image_norm)
-    modality_match = 0.0
     if q_mod:
         modality_match = len(q_mod & i_mod) / len(q_mod)
     else:
-        # fall back to lexical coverage on image field
         modality_match = _weighted_coverage(query_tokens, image_tokens, idf)
-
-    disease_match = 0.0
     if specific_diseases:
-        hits = sum(
-            1
-            for d in specific_diseases
-            if entity_in_doc(d, image_norm, image_tokens)
-        )
+        hits = sum(1 for d in specific_diseases if entity_in_doc(d, image_norm, image_tokens))
         disease_match = hits / len(specific_diseases)
     else:
         disease_match = _weighted_coverage(query_tokens, image_tokens, idf)
-
-    # Prefer modality AND disease together for image-oriented queries
     return 0.4 * modality_match + 0.6 * (modality_match * disease_match)
 
 
-def score_all(
-    metadatas: list[Metadata],
-    query: str,
-) -> list[ScoreBreakdown]:
-    """分字段相关性 + aspect/joint/constraint + relevance-first quality 加成。"""
+def medical_score_all(metadatas: list[Metadata], query: str) -> list[ScoreBreakdown]:
+    """
+    分字段医学概念感知评分。
+    返回完整的 ScoreBreakdown 列表。
+    """
     query_norm = normalize_medical_text(query)
     query_tokens = content_tokens(query_norm)
     n = len(metadatas)
@@ -293,16 +278,10 @@ def score_all(
     specific_diseases = specific_disease_concepts_in_query(query_norm)
 
     field_token_lists: dict[str, list[list[str]]] = {
-        "title": [],
-        "summary": [],
-        "text": [],
-        "image": [],
+        "title": [], "summary": [], "text": [], "image": [],
     }
     field_norms: dict[str, list[str]] = {
-        "title": [],
-        "summary": [],
-        "text": [],
-        "image": [],
+        "title": [], "summary": [], "text": [], "image": [],
     }
     doc_norms: list[str] = []
 
@@ -315,14 +294,12 @@ def score_all(
             field_token_lists[name].append(content_tokens(norms[name]))
 
     all_tokens = [
-        list(
-            dict.fromkeys(
-                field_token_lists["title"][i]
-                + field_token_lists["summary"][i]
-                + field_token_lists["text"][i]
-                + field_token_lists["image"][i]
-            )
-        )
+        list(dict.fromkeys(
+            field_token_lists["title"][i]
+            + field_token_lists["summary"][i]
+            + field_token_lists["text"][i]
+            + field_token_lists["image"][i]
+        ))
         for i in range(n)
     ]
     idf = _token_idf(all_tokens)
@@ -336,50 +313,38 @@ def score_all(
     prelim: list[tuple[Metadata, int, dict]] = []
 
     for i, meta in enumerate(metadatas):
-        title_toks = field_token_lists["title"][i]
         field_scores: dict[str, float] = {}
         for name in _FIELD_WEIGHTS:
             if name == "image":
                 field_scores[name] = _image_field_score(
-                    query_norm,
-                    field_norms["image"][i],
-                    query_tokens,
-                    field_token_lists["image"][i],
-                    idf,
-                    specific_diseases,
+                    query_norm, field_norms["image"][i],
+                    query_tokens, field_token_lists["image"][i],
+                    idf, specific_diseases,
                 )
                 continue
             penalty = _generic_only_penalty(
-                query_tokens,
-                field_token_lists[name][i],
-                specific_diseases,
-                field_norms[name][i],
+                query_tokens, field_token_lists[name][i],
+                specific_diseases, field_norms[name][i],
             )
             cov = _weighted_coverage(
-                query_tokens,
-                field_token_lists[name][i],
-                idf,
+                query_tokens, field_token_lists[name][i], idf,
                 generic_penalty=penalty,
             )
             bigram = _bigram_cooccur(query_tokens, field_token_lists[name][i])
-            field_scores[name] = (
-                0.5 * cov + 0.3 * bm25_by_field[name][i] + 0.2 * bigram
-            )
+            field_scores[name] = 0.5 * cov + 0.3 * bm25_by_field[name][i] + 0.2 * bigram
 
         rel = sum(_FIELD_WEIGHTS[name] * field_scores[name] for name in _FIELD_WEIGHTS)
         union_pen = _generic_only_penalty(
-            query_tokens, all_tokens[i], specific_diseases, doc_norms[i]
+            query_tokens, all_tokens[i], specific_diseases, doc_norms[i],
         )
         union_cov = _weighted_coverage(
-            query_tokens, all_tokens[i], idf, generic_penalty=union_pen
+            query_tokens, all_tokens[i], idf, generic_penalty=union_pen,
         )
-        topic = _weighted_coverage(query_tokens, title_toks, idf) if query_tokens else 0.0
+        topic = _weighted_coverage(query_tokens, field_token_lists["title"][i], idf) if query_tokens else 0.0
 
-        # Constraint coverage (require disease match when query names a specific disease)
+        # Constraint coverage
         if constraints:
-            c_hits = sum(
-                1 for c in constraints if constraint_doc_hit(c, doc_norms[i])
-            )
+            c_hits = sum(1 for c in constraints if constraint_doc_hit(c, doc_norms[i]))
             constraint_cov = c_hits / len(constraints)
             if specific_diseases:
                 disease_ok = any(
@@ -391,7 +356,7 @@ def score_all(
         else:
             constraint_cov = 0.0
 
-        # Aspect coverage (attenuate if query disease missing from doc)
+        # Aspect coverage
         if aspects:
             doc_l = doc_norms[i].lower()
             aspect_hits = sum(1 for a in aspects if aspect_doc_hit(a, doc_l))
@@ -408,36 +373,25 @@ def score_all(
 
         # Joint entity coverage
         if entities:
-            ent_hits = sum(
-                1 for e in entities if entity_in_doc(e, doc_norms[i], all_tokens[i])
-            )
+            ent_hits = sum(1 for e in entities if entity_in_doc(e, doc_norms[i], all_tokens[i]))
             joint = ent_hits / len(entities)
         else:
             joint = 0.0
 
         relevance = (
-            rel
-            + 0.25 * topic
-            + 0.20 * union_cov
-            + 0.20 * aspect_cov
-            + 0.30 * joint
-            + 0.25 * constraint_cov
+            rel + 0.25 * topic + 0.20 * union_cov
+            + 0.20 * aspect_cov + 0.30 * joint + 0.25 * constraint_cov
         )
 
-        # Opposite population cue: query asks elderly but doc emphasizes young/younger only
+        # Opposite population cue
         if "elderly" in constraints:
             dl = doc_norms[i].lower()
             has_elderly = constraint_doc_hit("elderly", doc_norms[i])
-            young_cue = (
-                "young adult" in dl
-                or "younger adult" in dl
-                or "young adults" in dl
-                or "younger adults" in dl
-            )
+            young_cue = any(x in dl for x in ["young adult", "younger adult", "young adults", "younger adults"])
             if young_cue and not has_elderly:
                 relevance *= 0.55
 
-        # Missing query disease: compress residual lexical match on wrong disease
+        # Missing disease penalty
         if specific_diseases:
             disease_ok = any(
                 entity_in_doc(d, doc_norms[i], all_tokens[i])
@@ -448,29 +402,14 @@ def score_all(
 
         ev = evidence_score(meta.evidence_level)
         src = source_score(meta.source_type) if evidence_q else 0.0
-        if evidence_q:
-            quality = 0.65 * ev + 0.35 * src
-        else:
-            quality = ev
+        quality = 0.65 * ev + 0.35 * src if evidence_q else ev
 
-        prelim.append(
-            (
-                meta,
-                i,
-                {
-                    "field_scores": field_scores,
-                    "rel": rel,
-                    "topic": topic,
-                    "aspect": aspect_cov,
-                    "joint": joint,
-                    "constraint": constraint_cov,
-                    "relevance": relevance,
-                    "ev": ev,
-                    "src": src,
-                    "quality": quality,
-                },
-            )
-        )
+        prelim.append((meta, i, {
+            "field_scores": field_scores,
+            "rel": rel, "topic": topic,
+            "aspect": aspect_cov, "joint": joint, "constraint": constraint_cov,
+            "relevance": relevance, "ev": ev, "src": src, "quality": quality,
+        }))
 
     max_rel = max((p[2]["relevance"] for p in prelim), default=0.0)
     breakdowns: list[ScoreBreakdown] = []
@@ -479,41 +418,34 @@ def score_all(
         relevance = s["relevance"]
         quality = s["quality"]
         closeness = relevance / max_rel if max_rel > 1e-12 else 0.0
-        quality_bonus = 0.15 * quality * (closeness**2)
+        quality_bonus = 0.15 * quality * (closeness ** 2)
         final = relevance + quality_bonus
-
         fs = s["field_scores"]
-        breakdowns.append(
-            ScoreBreakdown(
-                index=i,
-                id=meta.id,
-                title_score=fs["title"],
-                summary_score=fs["summary"],
-                text_score=fs["text"],
-                image_score=fs["image"],
-                rel=s["rel"],
-                topic=s["topic"],
-                aspect=s["aspect"],
-                joint=s["joint"],
-                constraint=s["constraint"],
-                relevance=relevance,
-                evidence=s["ev"],
-                source_bonus=s["src"],
-                quality=quality,
-                final=final,
-            )
-        )
+
+        breakdowns.append(ScoreBreakdown(
+            index=i, id=meta.id,
+            title_score=fs["title"], summary_score=fs["summary"],
+            text_score=fs["text"], image_score=fs["image"],
+            rel=s["rel"], topic=s["topic"],
+            aspect=s["aspect"], joint=s["joint"], constraint=s["constraint"],
+            relevance=relevance, evidence=s["ev"], source_bonus=s["src"],
+            quality=quality, final=final,
+        ))
 
     return breakdowns
 
 
-def rank_indices(breakdowns: list[ScoreBreakdown]) -> list[int]:
-    """按 final 降序；平局比 relevance、topic、joint、原 index。"""
-    return [
-        b.index
-        for b in sorted(
-            breakdowns,
-            key=lambda b: (b.final, b.relevance, b.topic, b.joint, -b.index),
-            reverse=True,
-        )
-    ]
+def medical_rerank(
+    metadatas: list[Metadata],
+    query: str,
+    top_k: int = 10,
+) -> list[tuple[Metadata, ScoreBreakdown]]:
+    """
+    对候选集做医学概念感知重排序，返回 top-k。
+    """
+    if not metadatas:
+        return []
+    breakdowns = medical_score_all(metadatas, query)
+    ranked = sorted(breakdowns, key=lambda b: (b.final, b.relevance, b.topic, b.joint, -b.index), reverse=True)
+    top = ranked[:top_k]
+    return [(metadatas[b.index], b) for b in top]
