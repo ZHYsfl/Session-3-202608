@@ -1,0 +1,19 @@
+llm:
+  # mock 可在无 API Key 时本地跑通；可改为 openai、qwen 或 compatible。
+  provider: compatible
+  model: deepseek-chat
+  api_key_env: DEEPSEEK_API_KEY
+  base_url: https://api.deepseek.com
+  temperature: 0.0
+  timeout: 120
+  max_retries: 2
+  json_mode: true
+
+reranker:
+  pairwise:
+    algorithm: win_count
+  listwise:
+    window_size: 5
+    stride: 2
+    fusion: rrf
+    rrf_k: 60

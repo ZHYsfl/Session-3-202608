@@ -1,0 +1,80 @@
+{
+  "query": "How can deep learning detect network intrusions in cyber security?",
+  "top_k1": 6,
+  "top_k2": 3,
+  "candidates": [
+    {
+      "id": "paper_001",
+      "title": "Deep Learning for Network Intrusion Detection",
+      "year": "2024",
+      "source_type": "IEEE论文",
+      "text_summary": "Evaluates transformer and recurrent models for detecting malicious network traffic.",
+      "text": "Full paper text intentionally remains local and is never sent to the LLM.",
+      "image_summary": ["A comparison chart of intrusion detection F1 scores."],
+      "image_base_64": ["ZXhhbXBsZQ=="],
+      "evidence_level": "peer-reviewed experiment",
+      "last_retrieved_at": null
+    },
+    {
+      "id": "paper_002",
+      "title": "A Survey of Cyber Security Threat Intelligence",
+      "year": "2023",
+      "source_type": "期刊论文",
+      "text_summary": "Reviews threat intelligence sharing platforms and knowledge graphs.",
+      "text": null,
+      "image_summary": ["Taxonomy of threat intelligence sources."],
+      "image_base_64": null,
+      "evidence_level": "systematic review",
+      "last_retrieved_at": null
+    },
+    {
+      "id": "paper_003",
+      "title": "Graph Neural Networks for Detecting Network Attacks",
+      "year": "2024",
+      "source_type": "会议论文",
+      "text_summary": "Models enterprise traffic as graphs and detects network intrusion anomalies.",
+      "text": null,
+      "image_summary": ["Graph construction and attack-detection pipeline."],
+      "image_base_64": null,
+      "evidence_level": "benchmark experiment",
+      "last_retrieved_at": null
+    },
+    {
+      "id": "paper_004",
+      "title": "Classical Signature-Based Malware Detection",
+      "year": "2019",
+      "source_type": "技术报告",
+      "text_summary": "Describes static signatures for executable malware files.",
+      "text": null,
+      "image_summary": null,
+      "image_base_64": null,
+      "evidence_level": null,
+      "last_retrieved_at": null
+    },
+    {
+      "id": "paper_005",
+      "title": "Explainable Deep Learning in Intrusion Detection Systems",
+      "year": "2022",
+      "source_type": "ACM论文",
+      "text_summary": "Uses SHAP explanations with deep learning network intrusion classifiers.",
+      "text": null,
+      "image_summary": ["Feature-attribution plot for detected network attacks."],
+      "image_base_64": null,
+      "evidence_level": "peer-reviewed experiment",
+      "last_retrieved_at": null
+    },
+    {
+      "id": "paper_006",
+      "title": "Computer Vision for Medical Imaging",
+      "year": "2024",
+      "source_type": "期刊论文",
+      "text_summary": "Applies convolutional neural networks to radiology images.",
+      "text": null,
+      "image_summary": ["Medical image segmentation examples."],
+      "image_base_64": null,
+      "evidence_level": "clinical retrospective study",
+      "last_retrieved_at": null
+    }
+  ]
+}
+
