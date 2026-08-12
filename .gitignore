@@ -165,3 +165,7 @@ node_modules/
 .toolchain/
 
 ppt/example/
+
+# Rerank local dependencies and generated outputs
+rerank_pointwise/work/
+rerank_pointwise/python_packages/

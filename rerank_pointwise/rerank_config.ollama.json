@@ -3,7 +3,7 @@
   "output": "reranked_metadata_list.json",
   "cache_dir": "work",
   "list_path": "auto",
-  "model": "qwen2.5:7b",
+  "model": "qwen2.5:3b",
   "base_url": "http://localhost:11434/v1",
   "api_key_env": "",
   "api_key": "",
