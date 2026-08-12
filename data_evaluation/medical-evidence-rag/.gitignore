@@ -1,0 +1,28 @@
+# Secrets and local model configuration
+**/model_config.json
+**/.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Evaluation outputs
+**/results/*.json
+**/results/*.jsonl
+**/errors.jsonl
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporary files and archives
+work/
+tmp/
+*.zip

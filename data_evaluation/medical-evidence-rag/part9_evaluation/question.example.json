@@ -1,0 +1,8 @@
+{
+  "id": "Q001",
+  "question": "示例问题，请交付题库时替换，不计入正式500题。",
+  "track": "track_1",
+  "expected_evidence_type": "guideline",
+  "notes": "填写判分要点、问题边界或出题说明。",
+  "should_abstain": false
+}

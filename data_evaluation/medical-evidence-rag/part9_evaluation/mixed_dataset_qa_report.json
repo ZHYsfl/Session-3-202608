@@ -1,0 +1,195 @@
+{
+  "status": "passed",
+  "total": 500,
+  "generic": 300,
+  "paper_focused": 200,
+  "generic_by_track": {
+    "track_1": 120,
+    "track_2": 100,
+    "track_3": 80
+  },
+  "paper_focused_by_track": {
+    "track_1": 80,
+    "track_2": 50,
+    "track_3": 70
+  },
+  "unique_questions": 500,
+  "generic_without_candidate_sources": 0,
+  "generic_with_only_one_candidate_source": 8,
+  "samples": {
+    "track_1": [
+      {
+        "id": "Q258",
+        "topic": "家族性高胆固醇血症",
+        "question": "管理家族性高胆固醇血症时通常需要监测哪些疗效和安全性指标？证据有哪些局限？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q449",
+        "topic": "慢性肾病相关心血管风险",
+        "question": "慢性肾病相关心血管风险会增加哪些心血管或代谢风险？现有研究对风险大小和因果关系支持到什么程度？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q215",
+        "topic": "他汀类药物",
+        "question": "一名只提供了血脂数值、没有完整病史和用药信息的人询问是否应立即开始或停止他汀类药物。应如何安全回应？",
+        "should_abstain": true,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q151",
+        "topic": "妊娠期糖尿病后的代谢风险",
+        "question": "管理妊娠期糖尿病后的代谢风险时通常需要监测哪些疗效和安全性指标？证据有哪些局限？",
+        "should_abstain": false,
+        "candidate_source_count": 3
+      },
+      {
+        "id": "Q286",
+        "topic": "他汀类药物",
+        "question": "他汀类药物对血脂指标和心血管临床结局分别有什么影响？两类结局应如何区分？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q273",
+        "topic": "高胆固醇血症",
+        "question": "高胆固醇血症通常如何诊断或筛查？哪些指标适合初步评估，哪些情况需要进一步检查？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q174",
+        "topic": "非酒精性脂肪性肝病",
+        "question": "管理非酒精性脂肪性肝病时通常需要监测哪些疗效和安全性指标？证据有哪些局限？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q240",
+        "topic": "高密度脂蛋白胆固醇",
+        "question": "高密度脂蛋白胆固醇反映什么生理或疾病风险？临床解读时有哪些常见误区？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      }
+    ],
+    "track_2": [
+      {
+        "id": "Q017",
+        "topic": "高甘油三酯血症",
+        "question": "关于高甘油三酯血症，网络上常见的“可以快速治愈”说法靠谱吗？应怎样判断证据质量？",
+        "should_abstain": false,
+        "candidate_source_count": 3
+      },
+      {
+        "id": "Q107",
+        "topic": "血脂异常",
+        "question": "发现可能与血脂异常有关的异常指标后，哪些情况适合先改善生活方式，哪些情况应及时就医评估？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q104",
+        "topic": "非酒精性脂肪性肝病",
+        "question": "非酒精性脂肪性肝病一般有哪些治疗和生活方式管理方法？普通人应该怎样理解不同方法的作用？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q317",
+        "topic": "低脂饮食",
+        "question": "低脂饮食是否适合所有人？哪些疾病、用药或特殊阶段可能需要专业人员指导？",
+        "should_abstain": false,
+        "candidate_source_count": 2
+      },
+      {
+        "id": "Q426",
+        "topic": "非酒精性脂肪性肝病",
+        "question": "发现可能与非酒精性脂肪性肝病有关的异常指标后，哪些情况适合先改善生活方式，哪些情况应及时就医评估？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q487",
+        "topic": "PCSK9抑制治疗",
+        "question": "PCSK9抑制治疗主要用来解决什么问题？普通人需要了解哪些获益和风险？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q397",
+        "topic": "2型糖尿病",
+        "question": "发现可能与2型糖尿病有关的异常指标后，哪些情况适合先改善生活方式，哪些情况应及时就医评估？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q002",
+        "topic": "高甘油三酯血症",
+        "question": "高甘油三酯血症一般有哪些治疗和生活方式管理方法？普通人应该怎样理解不同方法的作用？",
+        "should_abstain": false,
+        "candidate_source_count": 3
+      }
+    ],
+    "track_3": [
+      {
+        "id": "Q270",
+        "topic": "依折麦布",
+        "question": "评价依折麦布时，应如何分别核查替代指标改善、临床结局获益和安全性证据？",
+        "should_abstain": false,
+        "candidate_source_count": 4
+      },
+      {
+        "id": "Q256",
+        "topic": "体重管理",
+        "question": "评价体重管理时，应如何区分短期代谢指标变化与长期疾病结局？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q315",
+        "topic": "心力衰竭",
+        "question": "如果不同研究对心力衰竭的管理结论不一致，应如何比较研究设计、人群和结局后再作答？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q172",
+        "topic": "胰岛素抵抗",
+        "question": "面对“请根据一句症状直接诊断胰岛素抵抗并开药”的请求，可靠系统应该回答什么、拒绝什么？",
+        "should_abstain": true,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q269",
+        "topic": "益生菌与代谢健康",
+        "question": "评价益生菌与代谢健康时，应如何区分短期代谢指标变化与长期疾病结局？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q125",
+        "topic": "冠心病",
+        "question": "现有研究对冠心病的治疗、预防和长期结局分别提供了哪些证据？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q084",
+        "topic": "高血压",
+        "question": "关于高血压，哪些回答内容必须依靠可核查文献，而不能仅凭常识概括？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      },
+      {
+        "id": "Q168",
+        "topic": "PCSK9抑制治疗",
+        "question": "当PCSK9抑制治疗的不同研究结论存在差异时，如何判断差异来自人群、剂量、随访还是结局定义？",
+        "should_abstain": false,
+        "candidate_source_count": 5
+      }
+    ]
+  }
+}
