@@ -1,0 +1,30 @@
+{
+  "input": "metadata_list.json",
+  "output": "reranked_metadata_list.json",
+  "cache_dir": "work",
+  "list_path": "auto",
+  "model": "deepseek-chat",
+  "base_url": "https://api.deepseek.com/v1",
+  "api_key_env": "DEEPSEEK_API_KEY",
+  "api_key": "",
+  "json_mode": false,
+  "temperature": 0,
+  "timeout": 180,
+  "max_retries": 3,
+  "max_workers": 4,
+  "max_candidates_per_call": 30,
+  "score_top_n": 40,
+  "default_query": "",
+  "fields": {
+    "id": "id",
+    "title": "title",
+    "summary": "text_summary",
+    "evidence_level": "evidence_level",
+    "source_type": "source_type",
+    "year": "published_at",
+    "query": "query"
+  },
+  "summary_fallbacks": ["abstract", "summary", "text"],
+  "year_fallbacks": ["pub_year", "year", "publication_date", "date"],
+  "query_fallbacks": ["question", "user_query", "q"]
+}

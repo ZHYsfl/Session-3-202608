@@ -1,0 +1,30 @@
+{
+  "input": "metadata_list.json",
+  "output": "reranked_metadata_list.json",
+  "cache_dir": "work",
+  "list_path": "auto",
+  "model": "qwen2.5:7b",
+  "base_url": "http://localhost:11434/v1",
+  "api_key_env": "",
+  "api_key": "",
+  "json_mode": false,
+  "temperature": 0,
+  "timeout": 300,
+  "max_retries": 2,
+  "max_workers": 1,
+  "max_candidates_per_call": 20,
+  "score_top_n": 30,
+  "default_query": "",
+  "fields": {
+    "id": "id",
+    "title": "title",
+    "summary": "text_summary",
+    "evidence_level": "evidence_level",
+    "source_type": "source_type",
+    "year": "published_at",
+    "query": "query"
+  },
+  "summary_fallbacks": ["abstract", "summary", "text"],
+  "year_fallbacks": ["pub_year", "year", "publication_date", "date"],
+  "query_fallbacks": ["question", "user_query", "q"]
+}
