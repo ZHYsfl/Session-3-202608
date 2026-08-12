@@ -1,0 +1,12 @@
+{
+    "id": "paper_005",
+    "title": "Contrastive Language-Image Pre-training for Visual Recognition",
+    "year": "2021",
+    "source_type": "conference",
+    "text": "We present CLIP (Contrastive Language-Image Pre-training), which learns visual concepts from natural language supervision. CLIP jointly trains an image encoder and a text encoder to predict the correct pairings of images and text descriptions, achieving strong zero-shot transfer across diverse visual classification benchmarks.",
+    "text_summary": "CLIP jointly trains image and text encoders for zero-shot visual recognition via contrastive learning.",
+    "image_summary": ["CLIP architecture dual-encoder", "Zero-shot classification results"],
+    "image_base_64": ["base64_clip_1", "base64_clip_2"],
+    "evidence_level": ["strong", "strong"],
+    "last_retrieved_at": null
+}

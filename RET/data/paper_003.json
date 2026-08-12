@@ -1,0 +1,12 @@
+{
+    "id": "paper_003",
+    "title": "Efficient Object Detection via Transformer-based Architecture",
+    "year": "2023",
+    "source_type": "conference",
+    "text": "We propose a novel end-to-end object detection framework based on transformer architecture. The Detection Transformer (DETR) treats object detection as a direct set prediction problem, eliminating the need for hand-crafted components like non-maximum suppression or anchor generation.",
+    "text_summary": "DETR applies transformer architecture to object detection for end-to-end set prediction.",
+    "image_summary": ["DETR architecture overview", "COCO benchmark results"],
+    "image_base_64": ["base64_detr_1", "base64_detr_2"],
+    "evidence_level": ["strong", "strong"],
+    "last_retrieved_at": null
+}
