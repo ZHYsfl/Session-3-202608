@@ -10,6 +10,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import asyncio
 from dataclasses import asdict
 from contextlib import asynccontextmanager
 
@@ -102,7 +103,7 @@ async def chat(request: ChatAPIRequest):
             query=request.query,
             track=request.track,
         )
-        result = run_agent(req, verify=True)
+        result = await asyncio.to_thread(run_agent, req, verify=True)
 
         resp = result["response"]
         verification = result.get("verification")
@@ -183,8 +184,14 @@ async def search(request: ChatAPIRequest):
     """纯检索接口 — 不经过 LLM，直接返回检索结果"""
     try:
         results = _local_search(request.query, top_k=20)
+        result_dicts = []
+        for r in results:
+            d = asdict(r)
+            # 避免返回多 MB 的 base64 图片数据
+            d["image_base_64"] = []
+            result_dicts.append(d)
         return SearchAPIResponse(
-            results=[asdict(r) for r in results],
+            results=result_dicts,
             total=len(results),
         )
     except Exception as e:

@@ -2,19 +2,27 @@
 BGE-M3 Embedding — SiliconFlow API 封装
 - 主动节流（避免触发 429）
 - 自动重试
+- 注意：本模块只负责生成向量，不管理 SplitBlock
 """
+from __future__ import annotations
+
 import time
+from typing import TYPE_CHECKING
+
 import numpy as np
 from openai import OpenAI
 
 from config import (
-    SILICONFLOW_API_KEY,
-    SILICONFLOW_BASE_URL,
-    EMBEDDING_MODEL,
+    EMBEDDING_API_KEY,
+    EMBEDDING_BASE_URL,
     EMBEDDING_BATCH_SIZE,
+    EMBEDDING_MODEL,
 )
 
-_client = OpenAI(api_key=SILICONFLOW_API_KEY, base_url=SILICONFLOW_BASE_URL)
+if TYPE_CHECKING:
+    pass
+
+_client = OpenAI(api_key=EMBEDDING_API_KEY, base_url=EMBEDDING_BASE_URL)
 
 # 主动节流: ~30 批次/分钟 ≈ 2s/批次，留有余量避免 TPM 限流
 THROTTLE_SEC = 1.0
@@ -42,6 +50,7 @@ def embed_batch(texts: list[str], max_retries: int = 5) -> list[list[float]]:
         empty_idx = [j for j, t in enumerate(batch) if not t or not t.strip()]
         clean_batch = [t if t and t.strip() else " " for t in batch]
 
+        batch_vecs: list[list[float]] = []
         for attempt in range(max_retries):
             try:
                 _throttle()  # 主动限速
@@ -51,19 +60,20 @@ def embed_batch(texts: list[str], max_retries: int = 5) -> list[list[float]]:
             except Exception as e:
                 err_str = str(e)
                 if "429" in err_str or "RateLimit" in err_str:
-                    wait = min(3 ** attempt + 2, 60)
+                    wait = min(3**attempt + 2, 60)
                     print(f"  ⏳ 限流(429)，等待 {wait}s 重试...", flush=True)
                     time.sleep(wait)
                 elif attempt < max_retries - 1:
-                    wait = min(2 ** attempt, 10)
+                    wait = min(2**attempt, 10)
                     print(f"  ⚠️  {e}，等待 {wait}s 重试...", flush=True)
                     time.sleep(wait)
                 else:
                     raise
 
         # 空串置零
+        dim = len(batch_vecs[0]) if batch_vecs else 0
         for j in empty_idx:
-            batch_vecs[j] = [0.0] * len(batch_vecs[0])
+            batch_vecs[j] = [0.0] * dim
         results.extend(batch_vecs)
 
     return results

@@ -37,12 +37,11 @@ _client = OpenAI(api_key=SILICONFLOW_API_KEY, base_url=SILICONFLOW_BASE_URL)
 
 # ─── 检索工具导入 ──────────────────────────────────────────────
 
-from retriever import (
-    Metadata,
-    hybrid_retrieve,
-    load_metadata_from_dir,
-    invalidate_bm25_cache,
-)
+from citation_verifier import full_verify
+from models import Metadata
+from chunker import build_split_blocks_from_dict
+from retriever import hybrid_retrieve, add_to_bm25_index, build_bm25_index, load_metadata_from_dir, _bm25_index
+from vector_store import upsert_blocks
 
 _metadata_list: list[Metadata] | None = None
 
@@ -57,20 +56,20 @@ def _get_metadata():
 
 
 def preload_metadata():
-    """启动时预加载元数据 + 预热 BM25 缓存（避免首次请求阻塞 35s）"""
-    _get_metadata()
+    """启动时预加载元数据 + 预热 BM25 索引"""
+    meta_list = _get_metadata()
     print(f"📚 预加载 {len(_metadata_list)} 篇论文元数据", flush=True)
-    # 预热 BM25 缓存（耗时 ~35s，但在启动时做比在首次请求时做好）
-    from retriever import _get_bm25, _get_tokenized_docs
     print("⏳ 预热 BM25 索引...", flush=True)
-    _get_bm25(_metadata_list)
-    _get_tokenized_docs(_metadata_list)
+    build_bm25_index(meta_list)
     print("✅ BM25 索引就绪", flush=True)
 
 
 def _local_search(query: str, top_k: int = 15) -> list[SearchResult]:
     """本地 ChromaDB + BM25 混合检索"""
     meta_list = _get_metadata()
+    # 懒加载 BM25 索引（兼容未调用 preload_metadata 的场景）
+    if not _bm25_index.get_paper_ids():
+        build_bm25_index(meta_list)
     raw_results = hybrid_retrieve(
         query=query,
         keywords="",
@@ -146,15 +145,15 @@ def _hot_ingest_pubmed(results: list[SearchResult]) -> int:
     自动将外部 PubMed 论文入库（不重复）。
     返回新入库数量。
     """
-    from chunker import build_chunks, clean_source_type
     from embedding import embed_batch
-    from vector_store import upsert_chunks
+    from index_store import add_paper_chunks
 
     base = os.path.join(os.path.dirname(__file__), "..")
     data_dir = os.path.join(base, "data")
     os.makedirs(data_dir, exist_ok=True)
 
     new_count = 0
+    new_metas: list[Metadata] = []
 
     for r in results:
         pmid = r.paper_id.replace("pubmed_", "")
@@ -178,16 +177,19 @@ def _hot_ingest_pubmed(results: list[SearchResult]) -> int:
             "text": "",
             "image_summary": r.image_summary or [],
             "image_base_64": [],
+            "evidence_level": "",
+            "last_retrieved_at": None,
         }
 
         # 分块 + embedding + 入库
         try:
-            chunks = build_chunks(meta_dict)
-            if chunks:
-                texts = [c["document"] for c in chunks]
+            blocks = build_split_blocks_from_dict(meta_dict)
+            if blocks:
+                texts = [b.text for b in blocks]
                 vecs = embed_batch(texts)
-                upsert_chunks(chunks, vecs)
-                print(f"   ✅ 已入库 {len(chunks)} chunks", flush=True)
+                upsert_blocks(blocks, vecs)
+                add_paper_chunks(pmid, [b.id for b in blocks])
+                print(f"   ✅ 已入库 {len(blocks)} chunks", flush=True)
 
             # 保存 JSON 到 data/
             json_path = os.path.join(data_dir, f"pubmed_{pmid}.json")
@@ -195,7 +197,7 @@ def _hot_ingest_pubmed(results: list[SearchResult]) -> int:
                 json.dump(meta_dict, f, ensure_ascii=False, indent=2)
 
             # 更新内存中的 metadata_list
-            _metadata_list.append(Metadata(
+            new_meta = Metadata(
                 id=pmid,
                 title=r.title,
                 year=r.year,
@@ -204,7 +206,9 @@ def _hot_ingest_pubmed(results: list[SearchResult]) -> int:
                 text="",
                 image_summary=[],
                 image_base_64=[],
-            ))
+            )
+            _metadata_list.append(new_meta)
+            new_metas.append(new_meta)
 
             new_count += 1
         except Exception as e:
@@ -214,17 +218,12 @@ def _hot_ingest_pubmed(results: list[SearchResult]) -> int:
 
     if new_count:
         print(f"🔥 热更新完成: {new_count} 篇新论文入库", flush=True)
-        # 后台重建 BM25 缓存（原子替换，不影响进行中的请求）
+        # 后台重建 BM25 索引
         try:
-            from retriever import tokenize, build_document_text
-            from rank_bm25 import BM25Okapi
-            import retriever as rmod
-            docs = [tokenize(build_document_text(m)) for m in _metadata_list]
-            bm25 = BM25Okapi(docs)
-            rmod._bm25_cache = {"metadata_id": id(_metadata_list), "tokenized_docs": docs, "bm25": bm25}
-            print(f"   📊 BM25 缓存已后台重建 ({len(docs)} 篇)", flush=True)
+            build_bm25_index(_metadata_list)
+            print(f"   📊 BM25 索引已后台重建 ({len(_metadata_list)} 篇)", flush=True)
         except Exception as e:
-            print(f"   ⚠️ BM25 缓存重建失败: {e}", flush=True)
+            print(f"   ⚠️ BM25 索引重建失败: {e}", flush=True)
     return new_count
 
 

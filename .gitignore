@@ -169,5 +169,8 @@ ppt/example/
 .local-libs/
 
 chroma_db/
+hf_cache/
+ingest.log
+.env
 
 __pycache__/

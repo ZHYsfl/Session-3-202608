@@ -26,7 +26,7 @@ from medical_concepts import (
     normalize_medical_text,
     specific_disease_concepts_in_query,
 )
-from retriever import Metadata
+from models import Metadata
 from tokenizer_v2 import content_tokens
 
 _FIELD_WEIGHTS = {

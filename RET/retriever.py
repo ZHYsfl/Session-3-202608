@@ -5,12 +5,17 @@
 - 向量检索（title / summary / text / image_desc）
 - RRF 排名融合
 - 可选 MMR 重排
+
+改造重点：
+1. Metadata 从 models.py 导入，统一数据结构
+2. BM25 索引支持增量更新（add_document），避免热更新时重建全部
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -20,6 +25,8 @@ import numpy as np
 from rank_bm25 import BM25Okapi
 
 from embedding import embed_single
+from models import Metadata
+from tokenizer_v2 import content_tokens
 from vector_store import query_all_chunk_types, aggregate_maxsim
 
 # ─── 复用现有分词逻辑 ─────────────────────────────────────────
@@ -46,80 +53,106 @@ def tokenize(text: str) -> list[str]:
     return result
 
 
-# ─── Metadata 数据结构 ────────────────────────────────────────
+# ─── 增量 BM25 索引 ───────────────────────────────────────────
 
-@dataclass
-class Metadata:
-    title: str | None = None
-    year: str | None = None
-    source_type: str | None = None
-    id: str | None = None
-    text: str | None = None
-    text_summary: str | None = None
-    image_summary: list[str] | None = None
-    image_base_64: list[str] | None = None
-    evidence_level: list[str] | None = None
-    last_retrieved_at: str | None = None
+class IncrementalBM25:
+    """
+    增量 BM25 索引：新增文档时不必重建全部。
+    注意：rank_bm25 的 BM25Okapi 不原生支持增量，这里通过重新实例化实现。
+    但由于只保存了 tokenized_docs，重建成本比重新分词全文要低得多。
+    """
+
+    def __init__(self):
+        self._tokenized_docs: list[list[str]] = []
+        self._paper_ids: list[str] = []
+        self._id_to_index: dict[str, int] = {}
+        self._bm25: BM25Okapi | None = None
+        self._lock = threading.RLock()
+
+    def add_document(self, paper_id: str, tokens: list[str]):
+        """新增一篇文档；如果已存在则替换"""
+        with self._lock:
+            if paper_id in self._id_to_index:
+                idx = self._id_to_index[paper_id]
+                self._tokenized_docs[idx] = tokens
+            else:
+                idx = len(self._tokenized_docs)
+                self._tokenized_docs.append(tokens)
+                self._paper_ids.append(paper_id)
+                self._id_to_index[paper_id] = idx
+            self._bm25 = None  # 标记需要重建
+
+    def add_documents(self, paper_ids: list[str], docs_tokens: list[list[str]]):
+        """批量新增"""
+        for pid, tokens in zip(paper_ids, docs_tokens):
+            self.add_document(pid, tokens)
+
+    def get_bm25(self) -> BM25Okapi:
+        with self._lock:
+            if self._bm25 is None:
+                corpus = [doc if doc else ["__empty__"] for doc in self._tokenized_docs]
+                self._bm25 = BM25Okapi(corpus)
+            return self._bm25
+
+    def get_docs(self) -> list[list[str]]:
+        with self._lock:
+            return list(self._tokenized_docs)
+
+    def get_paper_ids(self) -> list[str]:
+        with self._lock:
+            return list(self._paper_ids)
+
+    def index_of(self, paper_id: str) -> int | None:
+        with self._lock:
+            return self._id_to_index.get(paper_id)
 
 
-# ─── BM25 / Keyword 检索 ──────────────────────────────────────
-
-# 缓存：避免每次查询都重新分词 480 篇全文
-_bm25_cache: dict = {"metadata_id": None, "tokenized_docs": None, "bm25": None}
-
-
-def _get_bm25(metadata_list: list[Metadata]) -> BM25Okapi:
-    """获取缓存的 BM25 索引，仅在 metadata 变化时重建"""
-    global _bm25_cache
-    meta_id = id(metadata_list)
-    if _bm25_cache["metadata_id"] == meta_id and _bm25_cache["bm25"] is not None:
-        return _bm25_cache["bm25"]
-    docs = [tokenize(build_document_text(m)) for m in metadata_list]
-    bm25 = BM25Okapi(docs)
-    _bm25_cache = {"metadata_id": meta_id, "tokenized_docs": docs, "bm25": bm25}
-    return bm25
-
-
-def _get_tokenized_docs(metadata_list: list[Metadata]) -> list[list[str]]:
-    """获取缓存的 tokenized docs"""
-    global _bm25_cache
-    meta_id = id(metadata_list)
-    if _bm25_cache["metadata_id"] == meta_id and _bm25_cache["tokenized_docs"] is not None:
-        return _bm25_cache["tokenized_docs"]
-    docs = [tokenize(build_document_text(m)) for m in metadata_list]
-    bm25 = BM25Okapi(docs)
-    _bm25_cache = {"metadata_id": meta_id, "tokenized_docs": docs, "bm25": bm25}
-    return docs
-
-
-def invalidate_bm25_cache():
-    """热更新后调用，强制下次查询重建 BM25 索引"""
-    global _bm25_cache
-    _bm25_cache = {"metadata_id": None, "tokenized_docs": None, "bm25": None}
+_bm25_index = IncrementalBM25()
 
 
 def build_document_text(m: Metadata) -> str:
-    parts = []
-    if m.title:
-        parts.extend([m.title, m.title])
-    if m.text_summary:
-        parts.append(m.text_summary)
-    if m.text:
-        parts.append(m.text)
-    if m.image_summary:
-        parts.extend(s for s in m.image_summary if s)
-    return "\n".join(parts)
+    """构造用于 BM25 / keyword 的文档文本（不加载 image_base64）"""
+    return m.index_text
 
+
+def _tokens_for_metadata(m: Metadata) -> list[str]:
+    return content_tokens(build_document_text(m))
+
+
+def build_bm25_index(metadata_list: list[Metadata]):
+    """用完整列表重建 BM25 索引（启动/全量重建时用）"""
+    global _bm25_index
+    new_index = IncrementalBM25()
+    for m in metadata_list:
+        if m.id:
+            new_index.add_document(m.id, _tokens_for_metadata(m))
+    _bm25_index = new_index
+
+
+def add_to_bm25_index(metadata: Metadata):
+    """增量添加单篇论文到 BM25 索引"""
+    if metadata.id:
+        _bm25_index.add_document(metadata.id, _tokens_for_metadata(metadata))
+
+
+def invalidate_bm25_cache():
+    """兼容旧接口：重新触发 BM25 索引重建"""
+    global _bm25_index
+    _bm25_index = IncrementalBM25()
+
+
+# ─── BM25 / Keyword 检索 ──────────────────────────────────────
 
 def bm25_search(metadata_list: list[Metadata], question: str, keywords: str = "", top_k: int = 200) -> list[dict]:
     query_tokens = tokenize(keywords or question)
     if not query_tokens:
         return []
-    bm25 = _get_bm25(metadata_list)
+    bm25 = _bm25_index.get_bm25()
     scores = bm25.get_scores(query_tokens)
+    paper_ids = _bm25_index.get_paper_ids()
     ranked = sorted(
-        [{"paper_id": metadata_list[i].id or str(i), "score": float(s), "index": i, "source": "bm25"}
-         for i, s in enumerate(scores)],
+        [{"paper_id": paper_ids[i], "score": float(s), "index": i, "source": "bm25"}
+         for i, s in enumerate(scores) if i < len(paper_ids)],
         key=lambda x: x["score"], reverse=True,
     )
     for r, item in enumerate(ranked[:top_k], start=1):
@@ -132,23 +165,31 @@ def keyword_search(metadata_list: list[Metadata], question: str, keywords: str =
     if not query_tokens:
         return []
     q_set = set(query_tokens)
-    cached_docs = _get_tokenized_docs(metadata_list)
+    paper_ids = _bm25_index.get_paper_ids()
+    cached_docs = _bm25_index.get_docs()
     scores = []
-    for i, m in enumerate(metadata_list):
+    meta_by_id = {m.id: m for m in metadata_list if m.id}
+
+    for i, pid in enumerate(paper_ids):
+        m = meta_by_id.get(pid)
+        if m is None:
+            scores.append((pid, 0.0))
+            continue
         doc_tokens = set(cached_docs[i])
         title_tokens = set(tokenize(m.title or ""))
         if not doc_tokens and not title_tokens:
-            scores.append((i, 0.0))
+            scores.append((pid, 0.0))
             continue
-        doc_cov = len(q_set & doc_tokens) / len(q_set) if doc_tokens else 0.0
-        title_cov = len(q_set & title_tokens) / len(q_set) if title_tokens else 0.0
-        scores.append((i, 0.7 * doc_cov + 0.3 * title_cov))
+        doc_cov = len(q_set & doc_tokens) / len(q_set) if q_set else 0.0
+        title_cov = len(q_set & title_tokens) / len(q_set) if q_set else 0.0
+        scores.append((pid, 0.7 * doc_cov + 0.3 * title_cov))
+
     scores.sort(key=lambda x: x[1], reverse=True)
     ranked = []
-    for r, (i, s) in enumerate(scores[:top_k], start=1):
+    for r, (pid, s) in enumerate(scores[:top_k], start=1):
         ranked.append({
-            "paper_id": metadata_list[i].id or str(i),
-            "score": s, "index": i, "source": "keyword", "rank": r,
+            "paper_id": pid,
+            "score": s, "index": r, "source": "keyword", "rank": r,
         })
     return ranked
 
@@ -161,8 +202,7 @@ def _chunk_results_to_paper_scores(
     top_k: int = 200,
 ) -> list[dict]:
     """
-    将 chunk 级检索结果聚合为论文级，
-    返回按 paper_id 聚合后的得分列表（MaxSim）。
+    将 chunk 级检索结果聚合为论文级，返回按 paper_id 聚合后的得分列表（MaxSim）。
     """
     agg = aggregate_maxsim(chunk_results)
     ranked = []
@@ -178,23 +218,30 @@ def _chunk_results_to_paper_scores(
     return ranked
 
 
-def vector_search(query: str, top_k_per_type: int = 200) -> dict[str, list[dict]]:
+def vector_search(
+    query: str,
+    top_k_per_type: int = 200,
+    year_filter: int | None = None,
+    source_type_filter: str | None = None,
+) -> dict[str, list[dict]]:
     """向量检索，返回各类型的论文级排名"""
     query_vec = embed_single(query)
-    raw = query_all_chunk_types(query_vec, top_k_per_type=top_k_per_type)
+    raw = query_all_chunk_types(
+        query_vec,
+        top_k_per_type=top_k_per_type,
+        year_filter=year_filter,
+        source_type_filter=source_type_filter,
+    )
 
     results = {}
     for ctype, chunks in raw.items():
-        if ctype == "text":
-            source = "vector_text"
-        elif ctype == "title":
-            source = "vector_title"
-        elif ctype == "summary":
-            source = "vector_summary"
-        elif ctype == "image_desc":
-            source = "vector_image"
-        else:
-            source = f"vector_{ctype}"
+        source_map = {
+            "text": "vector_text",
+            "title": "vector_title",
+            "summary": "vector_summary",
+            "image_desc": "vector_image",
+        }
+        source = source_map.get(ctype, f"vector_{ctype}")
         results[source] = _chunk_results_to_paper_scores(chunks, source, top_k=top_k_per_type)
     return results
 
@@ -207,18 +254,37 @@ def reciprocal_rank_fusion(
     top_k: int = 50,
     year_filter: int | None = None,
     source_type_filter: str | None = None,
+    metadata_map: dict[str, Metadata] | None = None,
 ) -> list[dict]:
     """
     多路排名 RRF 融合。
     每个 ranked_list 的元素需包含: paper_id, rank, score, source
     可选 year / source_type 过滤。
     """
+    metadata_map = metadata_map or {}
     fusion: dict[str, float] = {}
     paper_info: dict[str, dict] = {}
 
     for lst in ranked_lists:
         for item in lst:
             pid = item["paper_id"]
+            meta = metadata_map.get(pid)
+
+            # 过滤：年份下限
+            if year_filter is not None:
+                item_year = getattr(meta, "year", None)
+                try:
+                    if item_year is None or int(item_year) < year_filter:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+
+            # 过滤：来源类型
+            if source_type_filter:
+                item_source_type = getattr(meta, "source_type", None)
+                if item_source_type != source_type_filter:
+                    continue
+
             if pid not in paper_info:
                 paper_info[pid] = {
                     "paper_id": pid,
@@ -280,7 +346,6 @@ def mmr_rerank(
 
         for i, candidate in enumerate(remaining):
             relevance = candidate["normalized_score"]
-            # 多样性惩罚：与已选中论文 source_type 相同的计数
             diversity_penalty = 0.0
             candidate_src = metadata_map.get(candidate["paper_id"])
             candidate_src = candidate_src.source_type if candidate_src else None
@@ -298,7 +363,6 @@ def mmr_rerank(
 
         selected.append(remaining.pop(best_idx))
 
-    # 重新编号
     for r, item in enumerate(selected, start=1):
         item["rank"] = r
     return selected
@@ -333,15 +397,27 @@ def hybrid_retrieve(
     if not query.strip():
         return []
 
+    metadata_list = metadata_list or []
     ranked_lists: list[list[dict]] = []
 
     # 1) BM25 + Keyword 词汇检索
     if metadata_list:
-        ranked_lists.append(bm25_search(metadata_list, query, keywords))
-        ranked_lists.append(keyword_search(metadata_list, query, keywords))
+        bm25_res = bm25_search(metadata_list, query, keywords)
+        kw_res = keyword_search(metadata_list, query, keywords)
+        if bm25_res:
+            ranked_lists.append(bm25_res)
+        if kw_res:
+            ranked_lists.append(kw_res)
+
+    # 构建 metadata_map（供过滤和 MMR 使用）
+    metadata_map = {m.id: m for m in metadata_list if m.id}
 
     # 2) 向量检索（4路）
-    vec_results = vector_search(query)
+    vec_results = vector_search(
+        query,
+        year_filter=year_filter,
+        source_type_filter=source_type_filter,
+    )
     for source, pr in vec_results.items():
         if pr:
             ranked_lists.append(pr)
@@ -351,33 +427,29 @@ def hybrid_retrieve(
         *ranked_lists,
         year_filter=year_filter,
         source_type_filter=source_type_filter,
-        top_k=max(top_k * 5, 50),  # 先取多些，再 MMR
+        metadata_map=metadata_map,
+        top_k=max(top_k * 5, 50),
     )
 
     # 4) 可选 MMR
     if use_mmr and metadata_list:
-        meta_map = {m.id: m for m in metadata_list if m.id}
-        fused = mmr_rerank(fused, meta_map, top_k=top_k)
+        fused = mmr_rerank(fused, metadata_map, top_k=top_k)
 
     # 5) 截断 + 附加 metadata
     top = fused[:top_k]
     now = datetime.now(timezone.utc).isoformat()
 
-    if metadata_list:
-        meta_by_id = {m.id: m for m in metadata_list if m.id}
-        for item in top:
-            pid = item["paper_id"]
-            m = meta_by_id.get(pid)
-            if m:
-                m.last_retrieved_at = now
-                item["metadata"] = m
-                item["title"] = m.title
-                item["year"] = m.year
-                item["source_type"] = m.source_type
-                item["text_summary"] = m.text_summary
-                item["image_summary"] = m.image_summary
-                # image_base_64 附带返回
-                item["image_base_64"] = m.image_base_64
+    for item in top:
+        pid = item["paper_id"]
+        m = metadata_map.get(pid)
+        if m:
+            m.last_retrieved_at = now
+            item["metadata"] = m
+            item["title"] = m.title
+            item["year"] = m.year
+            item["source_type"] = m.source_type
+            item["text_summary"] = m.text_summary
+            item["image_summary"] = m.image_summary
 
     return top
 
@@ -385,19 +457,5 @@ def hybrid_retrieve(
 # ─── 加载元数据 ───────────────────────────────────────────────
 
 def load_metadata_from_dir(data_dir: str) -> list[Metadata]:
-    items = []
-    for fname in sorted(os.listdir(data_dir)):
-        if not fname.endswith(".json"):
-            continue
-        with open(os.path.join(data_dir, fname), "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        items.append(Metadata(
-            id=obj.get("id"), title=obj.get("title"),
-            year=obj.get("year"), source_type=obj.get("source_type"),
-            text=obj.get("text"), text_summary=obj.get("text_summary"),
-            image_summary=obj.get("image_summary"),
-            image_base_64=obj.get("image_base_64"),
-            evidence_level=obj.get("evidence_level"),
-            last_retrieved_at=obj.get("last_retrieved_at"),
-        ))
-    return items
+    from load_metadata import load_metadata_from_dir as _load
+    return _load(data_dir)
