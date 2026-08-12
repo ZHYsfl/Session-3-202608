@@ -1,0 +1,16 @@
+{
+  "title": "Metformin as first-line therapy for type 2 diabetes: a meta-analysis",
+  "year": "2024",
+  "source_type": "journal article",
+  "id": "meta-001",
+  "text_summary": "Meta-analysis of randomized trials comparing metformin with placebo for type 2 diabetes.",
+  "text": "We pooled 12 randomized controlled trials with 14,830 patients. Metformin reduced HbA1c by 1.2% compared with placebo and was associated with lower cardiovascular event risk. Findings support metformin as first-line therapy for type 2 diabetes. Subgroup analyses showed consistent benefit across age groups, and the safety profile remained acceptable.",
+  "image_summary": [
+    "Forest plot of HbA1c change"
+  ],
+  "image_base_64": [
+    "aGVsbG8="
+  ],
+  "evidence_level": "meta-analysis",
+  "last_retrieved_at": "2026-08-12"
+}

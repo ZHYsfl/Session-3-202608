@@ -1,0 +1,16 @@
+{
+  "title": "Randomized trial of metformin versus sulfonylurea in elderly patients",
+  "year": "2023",
+  "source_type": "journal article",
+  "id": "rct-002",
+  "text_summary": "A randomized controlled trial of metformin versus sulfonylurea for glycemic control in type 2 diabetes.",
+  "text": "In this open-label RCT, 620 elderly patients with type 2 diabetes were randomized to metformin or sulfonylurea for 24 months. Metformin achieved similar HbA1c reduction with fewer hypoglycemia events. Adherence was higher in the metformin arm. The authors conclude metformin is safe and effective for older adults.",
+  "image_summary": [
+    "Kaplan-Meier curve of hypoglycemia"
+  ],
+  "image_base_64": [
+    "aGVsbG8="
+  ],
+  "evidence_level": "RCT",
+  "last_retrieved_at": "2026-08-12"
+}

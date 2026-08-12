@@ -1,0 +1,11 @@
+class Metadata:
+    title: str | None
+    year: str | None
+    source_type: str | None
+    id: str | None
+    text_summary: str | None
+    text: str | None
+    image_summary: list[str] | None
+    image_base_64: list[str] | None
+    evidence_level: str | None
+    last_retrieved_at: str | None
