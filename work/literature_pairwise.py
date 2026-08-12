@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Any, Callable, Iterable
 
 
@@ -168,6 +170,56 @@ def _score_record(
     return sum(weights[k] * active[k] for k in active) / total_w * 100
 
 
+# ---------- 并行计算辅助 ----------
+
+_WORKER_CTX: dict[str, Any] = {}
+
+
+def _init_rule_worker(
+    records: list[dict[str, Any]],
+    query: str | None,
+    weights: dict[str, float] | None,
+    evidence_map: dict[str, float] | None,
+) -> None:
+    """进程池初始化：每个工作进程只载入一次全量记录，避免每个任务重复传参。"""
+    _WORKER_CTX["records"] = records
+    _WORKER_CTX["query"] = query
+    _WORKER_CTX["weights"] = weights
+    _WORKER_CTX["evidence_map"] = evidence_map
+
+
+def _judge_rule_chunk(pairs: list[tuple[int, int]]) -> list[int]:
+    """进程池任务：对一组 (i, j) 逐对重新打分并返回胜者（i / j / -1）。"""
+    recs = _WORKER_CTX["records"]
+    query = _WORKER_CTX["query"]
+    weights = _WORKER_CTX["weights"]
+    evidence_map = _WORKER_CTX["evidence_map"]
+    out: list[int] = []
+    for i, j in pairs:
+        si = _score_record(recs[i], query=query, weights=weights, evidence_map=evidence_map)
+        sj = _score_record(recs[j], query=query, weights=weights, evidence_map=evidence_map)
+        out.append(i if si > sj else j if si < sj else -1)
+    return out
+
+
+def _resolve_workers(workers: int | None, num_pairs: int) -> int:
+    """workers=None 时自动取 CPU 核数；对局太少时退回串行，避免进程启动开销。"""
+    if num_pairs < 16:
+        return 1
+    if workers is None:
+        workers = os.cpu_count() or 1
+    return max(1, int(workers))
+
+
+def _chunk_pairs(
+    pairs: list[tuple[int, int]], workers: int
+) -> list[list[tuple[int, int]]]:
+    """把 (i, j) 对列表均分成 workers 份，每份尽量连续。"""
+    k = min(workers, len(pairs)) or 1
+    size = (len(pairs) + k - 1) // k
+    return [pairs[s : s + size] for s in range(0, len(pairs), size)]
+
+
 def _has_content(rec: dict[str, Any]) -> bool:
     if rec.get("text") or rec.get("text_summary"):
         return True
@@ -184,6 +236,7 @@ def pairwise_rank(
     evidence_map: dict[str, float] | None = None,
     drop_empty: bool = True,
     return_counts: bool = False,
+    workers: int | None = None,
 ) -> list[dict[str, Any]] | list[tuple[dict[str, Any], int]]:
     """两两对比并排序。
 
@@ -194,8 +247,12 @@ def pairwise_rank(
         query/weights/evidence_map: 透传给内置规则打分，仅默认裁判使用
         drop_empty: True 时过滤 text、text_summary、图片列表全空的记录
         return_counts: True 时返回 [(record, 获胜场次), ...]
+        workers: 并行度；None=自动（按 CPU 核数），1=串行
 
-    复杂度 O(n^2)，n 较大时建议配合自定义裁判做剪枝或抽样。
+    默认规则裁判也是"每对重新打分再比较"（步骤单元是两两打分+比较），
+    整体是 O(n^2) 次打分；对局相互独立，可并行：规则裁判用进程池，
+    自定义裁判（如 LLM）用线程池。n 较大时建议先粗筛出 top m 再进入两两，
+    控制耗时和内存（进程池会把记录复制到每个工作进程一次）。
     """
     candidates = list(records)
     if drop_empty:
@@ -205,16 +262,17 @@ def pairwise_rank(
     wins = [0] * n
 
     if compare is None:
-        # 默认裁判：预先算好每条的总分，避免 O(n^2) 次重复打分
-        scores = [
-            _score_record(r, query=query, weights=weights, evidence_map=evidence_map)
-            for r in candidates
-        ]
-
         def decide(i: int, j: int) -> int:
-            if scores[i] > scores[j]:
+            # 步骤单元：先给 a、b 各打一次分，再比较
+            si = _score_record(
+                candidates[i], query=query, weights=weights, evidence_map=evidence_map
+            )
+            sj = _score_record(
+                candidates[j], query=query, weights=weights, evidence_map=evidence_map
+            )
+            if si > sj:
                 return i
-            if scores[i] < scores[j]:
+            if si < sj:
                 return j
             return -1
 
@@ -228,11 +286,34 @@ def pairwise_rank(
                 return j
             return -1
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            winner = decide(i, j)
-            if winner >= 0:
-                wins[winner] += 1
+    pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
+    workers = _resolve_workers(workers, len(pairs))
+
+    if workers <= 1 or not pairs:
+        winners = [decide(i, j) for i, j in pairs]
+    elif compare is None:
+        # 规则裁判是 CPU 密集计算：进程池并行，记录经 initializer 只拷贝一次/进程
+        chunks = _chunk_pairs(pairs, workers)
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_init_rule_worker,
+            initargs=(candidates, query, weights, evidence_map),
+        ) as pool:
+            results = list(pool.map(_judge_rule_chunk, chunks))
+        winners = [w for chunk in results for w in chunk]
+    else:
+        # 自定义裁判（如 LLM 网络调用）是 I/O 密集：线程池即可，记录共享内存不重复拷贝
+        def judge_thread_chunk(chunk: list[tuple[int, int]]) -> list[int]:
+            return [decide(i, j) for i, j in chunk]
+
+        chunks = _chunk_pairs(pairs, workers)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(judge_thread_chunk, chunks))
+        winners = [w for chunk in results for w in chunk]
+
+    for (i, j), winner in zip(pairs, winners):
+        if winner >= 0:
+            wins[winner] += 1
 
     # 稳定排序：同分的保持 k1 原有相对顺序
     order = sorted(range(n), key=lambda i: wins[i], reverse=True)

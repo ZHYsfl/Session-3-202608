@@ -13,6 +13,7 @@
     python main_pairwise.py --k2 3 --query "metformin diabetes"
     python main_pairwise.py --judge llm --model gpt-4.1-mini   # 线上模型当裁判
     python main_pairwise.py --judge ollama --model qwen2.5:7b  # 本地 Ollama 当裁判
+    python main_pairwise.py --workers 4                        # 4 进程并行两两对比
 """
 
 from __future__ import annotations
@@ -85,6 +86,8 @@ def main() -> None:
                         help="裁判方式：rule=内置规则，llm=线上模型，ollama=本地 Ollama")
     parser.add_argument("--model", default=None,
                         help="模型名（llm 默认 gpt-4.1-mini，ollama 默认 qwen2.5:7b）")
+    parser.add_argument("--workers", type=int, default=None,
+                        help="并行度（默认自动按 CPU 核数；1=串行）")
     args = parser.parse_args()
 
     records = load_records(Path(args.in_dir))
@@ -95,7 +98,9 @@ def main() -> None:
     print(f"裁判方式：{args.judge}" + (f"（{model}）" if args.judge != "rule" else ""))
 
     # ---- 唯一接口：传入 k1 条，返回 k2 条 ----
-    picked = pairwise_rank(records, args.k2, compare=compare, query=args.query)
+    picked = pairwise_rank(
+        records, args.k2, compare=compare, query=args.query, workers=args.workers
+    )
     # ------------------------------------------
 
     print(f"输出 k2 = {len(picked)} 条记录（按获胜场次降序）：")
