@@ -1,0 +1,84 @@
+# Medical Evidence RAG
+
+面向医学证据问答的RAG生成、500题有效性评测及三赛道Prompt工程。
+
+## 工程组成
+
+```text
+medical-evidence-rag/
+├── part6_generation/       # 第6部分：最终产品只由RAG回答
+├── part9_evaluation/       # 第9部分：500题纯LLM vs RAG有效性评测
+├── three_track_prompts/    # 三个赛道的正式提示词
+├── .gitignore
+├── LICENSE
+└── README.md
+```
+
+### 第6部分
+
+最终产品的生成链路：用户问题经过前序检索和重排，得到 `list[Metadata]`，然后只调用我们的RAG模型生成带引用回答。
+
+入口：`part6_generation/generation.py` 中的 `generate_rag_answer()`。
+
+### 第9部分
+
+500题只用于验证系统有效性：同一底座模型分别以纯LLM和RAG方式回答，再由第三个模型单次匿名评判。
+
+当前题库包含：
+
+- 300道通用型真实用户问题；
+- 200道论文针对型专业问题；
+- 赛道一200题、赛道二150题、赛道三150题。
+
+入口：`part9_evaluation/run_batch.py`。
+
+主指标：
+
+```text
+RAG排除平局胜率 = RAG胜场 / (RAG胜场 + 纯LLM胜场)
+```
+
+### 三赛道提示词
+
+- 赛道一：临床证据｜找证据；
+- 赛道二：健康营养｜讲明白；
+- 赛道三：对比评估｜测清楚。
+
+正式Prompt位于 `three_track_prompts/three_track_prompts.json`。
+
+## 快速开始
+
+项目仅使用Python标准库，建议Python 3.10或更高版本。
+
+1. 阅读 `part6_generation/README.md` 或 `part9_evaluation/README.md`。
+2. 将对应的 `model_config.template.json` 复制为 `model_config.json`。
+3. 填写API地址与模型名称。
+4. 通过环境变量传入API密钥，不要把密钥提交到Git。
+
+第9部分先校验题库：
+
+```powershell
+python part9_evaluation/validate_questions.py part9_evaluation/questions_500.json
+```
+
+准备好检索结果后先试跑1题：
+
+```powershell
+python part9_evaluation/run_batch.py `
+  --questions part9_evaluation/questions_500.json `
+  --retrieval part9_evaluation/retrieval_results.json `
+  --config part9_evaluation/model_config.json `
+  --limit 1
+```
+
+## 数据说明
+
+题目基于用户提供的420条结构化论文记录构建。仓库不包含原始论文全文压缩包，但包含题目、来源审计映射、JSON Schema和质量报告。
+
+题库仍标记为 `draft`，表示已经通过程序化检查，但尚未经过医生或课程教师逐题审核。完成专业审核后再改为 `frozen`。
+
+## 安全说明
+
+- 本项目用于教学与研究评测，不构成临床诊断或处方系统。
+- 不提交API密钥、`.env`、真实患者信息或模型运行日志。
+- 95%是评测目标，不应通过修改裁判倾向、删除不利题目或泄漏正确来源来人为实现。

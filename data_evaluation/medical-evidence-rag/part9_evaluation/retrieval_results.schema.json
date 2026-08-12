@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "500题检索与重排结果接口",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "results"],
+  "properties": {
+    "version": {"type": "string", "minLength": 1},
+    "description": {"type": "string"},
+    "results": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^Q(00[1-9]|0[1-9][0-9]|[1-4][0-9]{2}|500)$"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {"$ref": "#/$defs/metadata"}
+      }
+    }
+  },
+  "$defs": {
+    "nullableString": {"type": ["string", "null"]},
+    "nullableStringArray": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "array", "items": {"type": "string"}}
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "year",
+        "source_type",
+        "id",
+        "text_summary",
+        "text",
+        "image_summary",
+        "image_base_64",
+        "evidence_level",
+        "last_retrieved_at"
+      ],
+      "properties": {
+        "title": {"$ref": "#/$defs/nullableString"},
+        "year": {"$ref": "#/$defs/nullableString"},
+        "source_type": {"$ref": "#/$defs/nullableString"},
+        "id": {"$ref": "#/$defs/nullableString"},
+        "text_summary": {"$ref": "#/$defs/nullableString"},
+        "text": {"$ref": "#/$defs/nullableString"},
+        "image_summary": {"$ref": "#/$defs/nullableStringArray"},
+        "image_base_64": {"$ref": "#/$defs/nullableStringArray"},
+        "evidence_level": {"$ref": "#/$defs/nullableString"},
+        "last_retrieved_at": {"$ref": "#/$defs/nullableString"}
+      }
+    }
+  }
+}

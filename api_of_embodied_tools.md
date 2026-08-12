@@ -1,6 +1,6 @@
 我们要写具身agent的四个工具，为了联调方便，把这四个工具暴露成restful api.restful api的文档要包含接口是什么，输入和输出的字段各自是什么的详细说明，以及该接口的说明介绍等。
 
-一个工具是get_current_coordinates()->str,工具内部会检测自己的速度，如果速度小于某个阈值，那么工具会返回当前的坐标位置，如果速度大于等于该阈值，工具会返回“我的坐标是{x},{y},{z}”.
+一个工具是get_current_coordinates()->str,工具内部会检测自己的速度，如果速度小于某个阈值，那么工具会返回“当前坐标为({x},{y},{z})”，如果速度大于等于该阈值，工具会返回“我的坐标是{x},{y},{z}”.
 
 一个工具是move_to_coordinates(x:str,y:str,z:str) -> str，工具内部会有办法利用某种算法/网络到达指定的x,y,z处。每次到达后，工具内部应该有检查机制，如果误差小于某个阈值，那么返回“成功到达{x},{y},{z}”，否则返回“未到达{x},{y},{z}，误差是{error}”.
 
@@ -45,7 +45,7 @@ HTTP 状态码约定：
 
 ### 2.1 获取当前坐标
 
-- **接口说明**：对应工具 `get_current_coordinates() -> str`。工具内部会检测自身速度：若速度小于阈值，返回当前的坐标位置；若速度大于等于阈值，返回 `我的坐标是{x},{y},{z}`。
+- **接口说明**：对应工具 `get_current_coordinates() -> str`。工具内部会检测自身速度：若速度小于阈值，返回 `当前坐标为({x},{y},{z})`；若速度大于等于阈值，返回 `我的坐标是{x},{y},{z}`。
 - **URL**：`GET /api/v1/get_current_coordinates`
 - **输入**：无请求参数，无请求体。
 - **输出**（HTTP 200）：
@@ -53,7 +53,7 @@ HTTP 状态码约定：
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `code` | int | 固定为 `0`。 |
-| `result` | string | 工具返回的坐标字符串。低速时为当前坐标位置描述；速度大于等于阈值时为 `我的坐标是{x},{y},{z}`，其中 `{x}`、`{y}`、`{z}` 为当前坐标分量。 |
+| `result` | string | 工具返回的坐标字符串。低速时为 `当前坐标为({x},{y},{z})`；速度大于等于阈值时为 `我的坐标是{x},{y},{z}`，其中 `{x}`、`{y}`、`{z}` 为当前坐标分量。 |
 | `error` | null | 固定为 `null`。 |
 
 - **调用示例**：
@@ -276,7 +276,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/get_message_from_voice_agent
   - `message_from_voice_agent_queue`（voice → arm 方向）：语音网关的 `send_to_arm_agent` 生产，本网关的 `get_message_from_voice_agent` 消费。
   - `message_from_arm_agent_queue`（arm → voice 方向）：本网关的 `send_to_voice_agent` 生产，语音网关的 `get_message_from_arm_agent` 消费。
 - **状态栏注入（编排层职责，非工具）**：状态栏在两个 agent 侧统一为独立的 role=user 消息，内容为 `<queue_status>empty/not empty</queue_status>`。arm agent 忙碌时，每条 tool response 消息之后追加一条状态栏消息，反映 `message_from_voice_agent_queue` 当时是否非空，随后让 LLM 继续推理；arm agent 空闲自动消费时注入的任务消息后不追加状态栏（队列刚排空，恒为 empty）。当 tool response、user input、状态栏三者同时存在时，顺序固定为 tool response → user input → 状态栏。
-- **消费结果的消息形式**：`get_message_from_voice_agent` 的返回字符串以一条 user 消息进入上下文，形如 `all_messages_from_voice_agent:...`。
+- **消费结果的消息形式**：`get_message_from_voice_agent` 的返回字符串以一条 role=tool 消息进入上下文（chat template 渲染进 user 的 <tool_response> 块），形如 `all_messages_from_voice_agent:...`。
 - 人优先原则：队列消息只能通过"状态栏感知 + 主动消费"进入上下文，不得直接插队打断当前推理。
 
 ---

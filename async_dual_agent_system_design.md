@@ -95,6 +95,7 @@ all_messages_from_voice_agent:请改抓黄色物块;目标位置不变
 - **与 PPT 系统的差异**：本系统没有 `remember` / `require_confirm` 需求收集与前端确认管线。人直接语音下达任务；Voice Agent 只在对话层面澄清意图（缺颜色、缺位置就问清楚），意图明确即调用 `send_to_arm_agent` 下发。微调数据要保证：**意图不明确时不得调用 `send_to_arm_agent`**。
 - **Qwen3 原生工具协议**：工具声明走 `tools` 字段（渲染进 system 块 `<tools>` 段）；assistant 的工具调用走结构化 `tool_calls` 字段（渲染为 `<tool_call>\n{"name": ..., "arguments": {...}}\n</tool_call>`）；工具结果以单条 `role="tool"` 消息写回，chat template 自动包成 user 块的 `<tool_response>` 段——原生格式自带"tool 结果进 user 块"效果，**不再做 tool/user 双角色手工回写**。
 - **`</interrupted>` 打断重组**：被截断的 assistant 消息原样保留，用户新输入（可带 `</interrupted>` 标记）接续其后，随后紧跟一条独立的 `<queue_status>` 状态栏 user 消息。
+- **滚动压缩（长对话防溢出，两侧同思路）**：历史条数超过阈值时，把最旧的一段交给同一个 LLM 压缩成滚动摘要（可与前次摘要合并），近期消息原样保留——Voice 侧阈值 24 条 / 保留最近 12 条，摘要存于 `AppState` 并在每次推理时注入 system 之后；Arm 侧阈值 48 条 / 保留最近 24 条，摘要以 `【此前执行摘要】` 开头的 user 消息存于历史内 system 之后。压缩调用本身不带工具 schema。相比滑动窗口直接丢弃旧消息，压缩机制不丢信息，且让训练（短对话）与推理（长对话）的上下文分布保持一致。
 
 ## 6. 一次完整链调时序（示例）
 

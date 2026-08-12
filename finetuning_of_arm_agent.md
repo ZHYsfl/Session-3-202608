@@ -51,7 +51,7 @@
   {"role": "system", "content": "你是异步双 agent 系统中的 Arm Agent，……"},
   {"role": "user", "content": "all_messages_from_voice_agent:用户给了以下信息：抓取 red 物块并放到 (1.0,2.0,3.0)，请你开始执行。"},
   {"role": "assistant", "content": "收到，我先确认当前坐标，再移动到物块位置抓取红色物块。", "tool_calls": [{"type": "function", "function": {"name": "get_current_coordinates", "arguments": {}}}]},
-  {"role": "tool", "content": "我的坐标是0.0,0.0,0.0"},
+  {"role": "tool", "content": "当前坐标为(0.0,0.0,0.0)"},
   {"role": "user", "content": "<queue_status>empty</queue_status>"},
   {"role": "assistant", "content": "", "tool_calls": [{"type": "function", "function": {"name": "move_to_coordinates", "arguments": {"x": "0.5", "y": "0.2", "z": "0.1"}}}]},
   {"role": "tool", "content": "成功到达0.5,0.2,0.1"},
@@ -80,7 +80,7 @@ all_messages_from_voice_agent:用户给了以下信息：抓取 red 物块并放
 </tool_call><|im_end|>
 <|im_start|>user
 <tool_response>
-我的坐标是0.0,0.0,0.0
+当前坐标为(0.0,0.0,0.0)
 </tool_response><|im_end|>
 <|im_start|>user
 <queue_status>empty</queue_status><|im_end|>

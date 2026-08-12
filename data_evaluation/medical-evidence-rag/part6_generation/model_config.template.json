@@ -1,0 +1,12 @@
+{
+  "rag_model": {
+    "protocol": "responses",
+    "base_url": "https://api.openai.com/v1",
+    "model": "请填写最终产品使用的模型名称",
+    "api_key_env": "RAG_MODEL_API_KEY",
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_output_tokens": 2000,
+    "timeout_seconds": 120
+  }
+}

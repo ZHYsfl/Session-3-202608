@@ -1,0 +1,12 @@
+{
+  "dataset_name": "medical_evidence_three_track_500",
+  "version": "0.1.0",
+  "status": "awaiting_questions",
+  "total_expected": 500,
+  "allocation": {
+    "track_1": 200,
+    "track_2": 150,
+    "track_3": 150
+  },
+  "questions": []
+}

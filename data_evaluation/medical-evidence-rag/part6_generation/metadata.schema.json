@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "第6部分输入：list[Metadata]",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["title", "year", "source_type", "id", "text_summary", "text", "image_summary", "image_base_64", "evidence_level", "last_retrieved_at"],
+    "properties": {
+      "title": {"type": ["string", "null"]},
+      "year": {"type": ["string", "null"]},
+      "source_type": {"type": ["string", "null"]},
+      "id": {"type": ["string", "null"]},
+      "text_summary": {"type": ["string", "null"]},
+      "text": {"type": ["string", "null"]},
+      "image_summary": {"type": ["array", "null"], "items": {"type": "string"}},
+      "image_base_64": {"type": ["array", "null"], "items": {"type": "string"}},
+      "evidence_level": {"type": ["string", "null"]},
+      "last_retrieved_at": {"type": ["string", "null"]}
+    }
+  }
+}
