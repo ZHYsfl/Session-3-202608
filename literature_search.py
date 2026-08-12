@@ -94,6 +94,26 @@ FULL_TEXT_TIMEOUT = 15
 IMAGE_DOWNLOAD_TIMEOUT = 10
 REQUEST_TIMEOUT = 30
 
+# 文章类型映射 (用户友好名 → PubMed / Europe PMC 查询片段)
+ARTICLE_TYPE_MAP = {
+    "rct": "Randomized Controlled Trial",
+    "randomized-controlled-trial": "Randomized Controlled Trial",
+    "meta-analysis": "Meta-Analysis",
+    "systematic-review": "Systematic Review",
+    "review": "Review",
+    "clinical-trial": "Clinical Trial",
+    "case-report": "Case Reports",
+    "guideline": "Guideline",
+    "practice-guideline": "Practice Guideline",
+    "editorial": "Editorial",
+    "letter": "Letter",
+    "observational-study": "Observational Study",
+    "comparative-study": "Comparative Study",
+    "evaluation-study": "Evaluation Study",
+    "validation-study": "Validation Study",
+    "multicenter-study": "Multicenter Study",
+}
+
 HEADERS = {
     "User-Agent": f"MedicalLiteratureSearch/1.1 (https://github.com/med-lit-search)",
     "Accept": "application/json, application/xml, text/xml, */*",
@@ -280,10 +300,15 @@ class LiteratureSearchEngine:
     """医学文献检索引擎"""
 
     def __init__(self, max_results: int = 20, fetch_full_text: bool = True,
-                 verbose: bool = False):
+                 verbose: bool = False, year: Optional[int] = None,
+                 article_type: Optional[str] = None):
         self.max_results = max_results
         self.fetch_full_text = fetch_full_text
         self.verbose = verbose
+        self.year = year
+        self.article_type = article_type
+        # 每个数据源分配的数量 (四源均分，最少 1 条)
+        self._per_source = max(1, max_results // 4)
         self._session: Optional[aiohttp.ClientSession] = None
         self._img_session: Optional[aiohttp.ClientSession] = None
         self._page_session: Optional[aiohttp.ClientSession] = None
@@ -373,14 +398,97 @@ class LiteratureSearchEngine:
         raise last_error  # type: ignore[misc]
 
     # =========================================================================
+    # 查询构建 & 客户端过滤
+    # =========================================================================
+    def _build_query_with_filters(self, query: str) -> str:
+        """将年份和文章类型拼接到查询字符串中 (PubMed / Europe PMC 用)"""
+        q = query
+
+        # 年份过滤: PubMed 用 mindate/maxdate 参数处理(见 _search_pubmed)
+        #            Europe PMC 用 FIRST_PDATE (见 _search_europe_pmc)
+        #            此处不额外处理年份
+
+        # 文章类型过滤
+        if self.article_type:
+            type_key = self.article_type.lower().strip()
+            pub_type = ARTICLE_TYPE_MAP.get(type_key)
+            if pub_type:
+                # 同时兼容 PubMed 和 Europe PMC
+                q = f'{q} AND "{pub_type}"[Publication Type]'
+            else:
+                logger.warning(f"⚠️ 未知文章类型: {self.article_type}，已忽略类型过滤。"
+                             f"支持: {', '.join(sorted(ARTICLE_TYPE_MAP.keys()))}")
+
+        return q
+
+    def _client_filter(self, results: list[LiteratureMetadata]) -> list[LiteratureMetadata]:
+        """客户端侧过滤 (年份 + 文章类型), 用于不支持服务端过滤的数据源"""
+        filtered = []
+        for r in results:
+            # 年份过滤
+            if self.year and r.year:
+                try:
+                    if int(r.year) != self.year:
+                        continue
+                except (ValueError, TypeError):
+                    pass  # year 无法解析时保留
+
+            # 文章类型过滤 (通过 evidence_level 和 source_type 推断)
+            if self.article_type:
+                type_key = self.article_type.lower().strip()
+                if not self._match_article_type(r, type_key):
+                    continue
+
+            filtered.append(r)
+        return filtered
+
+    @staticmethod
+    def _match_article_type(result: LiteratureMetadata, type_key: str) -> bool:
+        """判断一条结果是否匹配给定的文章类型"""
+        # ClinicalTrials.gov 只有临床试验
+        if result.source_type == "clinicaltrials":
+            return type_key in ("clinical-trial", "rct")
+
+        evidence = result.evidence_level or ""
+
+        if type_key in ("rct", "randomized-controlled-trial"):
+            return evidence in ("1A", "1B")
+        if type_key == "meta-analysis":
+            return evidence == "1A"
+        if type_key == "systematic-review":
+            return evidence in ("1A", "2A", "3A")
+        if type_key == "review":
+            return evidence == "5"
+        if type_key == "clinical-trial":
+            return evidence in ("1B", "2B")
+        if type_key == "case-report":
+            return evidence == "4"
+        # 其他类型 —— 在元数据摘要/标题中模糊查找
+        search_text = f"{result.test_summary or ''} {result.title or ''}".lower()
+        lookup = type_key.replace("-", " ")
+        return lookup in search_text
+
+    # =========================================================================
     # 主搜索入口
     # =========================================================================
     async def search(self, query: str) -> list[dict]:
         """并发搜索所有数据源，返回统一的 metadata 字典列表"""
-        logger.info(f'🔍 开始检索: "{query}" (最大: {self.max_results})')
+        # 构建日志描述
+        filter_desc = ""
+        if self.year:
+            filter_desc += f" 年份={self.year}"
+        if self.article_type:
+            filter_desc += f" 类型={self.article_type}"
+        logger.info(
+            f'🔍 开始检索: "{query}"'
+            f" (总量: {self.max_results}, 每源: {self._per_source}{filter_desc})"
+        )
+
+        # 构建带过滤的查询字符串
+        enriched_query = self._build_query_with_filters(query)
 
         results_pubmed, results_ct, results_epmc, results_ss = await asyncio.gather(
-            self._search_pubmed(query),
+            self._search_pubmed(enriched_query),
             self._search_clinicaltrials(query),
             self._search_europe_pmc(query),
             self._search_semantic_scholar(query),
@@ -421,9 +529,12 @@ class LiteratureSearchEngine:
         esearch_url = (
             f"{PUBMED_BASE}/esearch.fcgi"
             f"?db=pubmed&term={quote(query)}"
-            f"&retmax={self.max_results}&retmode=json&sort=relevance"
+            f"&retmax={self._per_source}&retmode=json&sort=relevance"
             f"&tool={PUBMED_TOOL}&email={quote(PUBMED_EMAIL)}"
         )
+        # 年份过滤
+        if self.year:
+            esearch_url += f"&mindate={self.year}&maxdate={self.year}&datetype=pdat"
         if PUBMED_API_KEY:
             esearch_url += f"&api_key={PUBMED_API_KEY}"
 
@@ -571,7 +682,7 @@ class LiteratureSearchEngine:
         url = (
             f"{CLINICALTRIALS_BASE}/studies"
             f"?query.term={quote(query)}"
-            f"&pageSize={self.max_results}&format=json"
+            f"&pageSize={self._per_source}&format=json"
         )
         try:
             resp = await self._retry_get(session, url)
@@ -583,7 +694,7 @@ class LiteratureSearchEngine:
         except Exception as e:
             logger.error(f"ClinicalTrials.gov 请求失败: {e}")
             return []
-        return self._parse_clinicaltrials_json(data)
+        return self._client_filter(self._parse_clinicaltrials_json(data))
 
     def _parse_clinicaltrials_json(self, data: dict) -> list[LiteratureMetadata]:
         results = []
@@ -653,10 +764,21 @@ class LiteratureSearchEngine:
     # =========================================================================
     async def _search_europe_pmc(self, query: str) -> list[LiteratureMetadata]:
         session = await self._get_session()
+        # 构建 Europe PMC 专用查询 (语法与 PubMed 不同)
+        epmc_query = query
+        # 年份过滤
+        if self.year:
+            epmc_query = f"{epmc_query} AND FIRST_PDATE:{self.year}"
+        # 文章类型过滤 (Europe PMC 用 PUB_TYPE: 语法)
+        if self.article_type:
+            type_key = self.article_type.lower().strip()
+            pub_type = ARTICLE_TYPE_MAP.get(type_key)
+            if pub_type:
+                epmc_query = f'{epmc_query} AND PUB_TYPE:"{pub_type}"'
         url = (
             f"{EUROPEPMC_BASE}/search"
-            f"?query={quote(query)}"
-            f"&resultType=core&pageSize={self.max_results}&format=json"
+            f"?query={quote(epmc_query)}"
+            f"&resultType=core&pageSize={self._per_source}&format=json"
         )
         try:
             resp = await self._retry_get(session, url)
@@ -728,9 +850,12 @@ class LiteratureSearchEngine:
         url = (
             f"{SEMANTIC_SCHOLAR_BASE}/paper/search"
             f"?query={quote(query)}"
-            f"&limit={self.max_results}"
+            f"&limit={self._per_source}"
             f"&fields={SEMANTIC_SCHOLAR_FIELDS}"
         )
+        # 年份过滤
+        if self.year:
+            url += f"&year={self.year}-{self.year}"
         try:
             resp = await self._retry_get(session, url)
             async with resp:
@@ -741,7 +866,7 @@ class LiteratureSearchEngine:
         except Exception as e:
             logger.error(f"Semantic Scholar 请求失败: {e}")
             return []
-        return self._parse_semantic_scholar_json(data)
+        return self._client_filter(self._parse_semantic_scholar_json(data))
 
     def _parse_semantic_scholar_json(self, data: dict) -> list[LiteratureMetadata]:
         results = []
@@ -1393,9 +1518,15 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python literature_search.py "metformin diabetes RCT" -n 10
-  python literature_search.py "COVID-19 vaccine" --no-full-text -o results.json
-  python literature_search.py "cancer immunotherapy" -o results.json --csv results.csv --verbose
+  python literature_search.py "metformin diabetes RCT" -n 20
+  python literature_search.py "COVID-19 vaccine" --year 2022 --article-type rct
+  python literature_search.py "cancer immunotherapy" -n 40 -y 2023 -t meta-analysis
+  python literature_search.py "heart failure" -o results.json --csv results.csv --verbose
+
+文章类型支持:
+  rct, meta-analysis, systematic-review, review, clinical-trial,
+  case-report, guideline, practice-guideline, editorial, letter,
+  observational-study, comparative-study, multicenter-study
 
 环境变量:
   PUBMED_API_KEY         PubMed E-utilities API 密钥
@@ -1404,7 +1535,12 @@ async def main():
         """,
     )
     parser.add_argument("query", type=str, help="搜索查询字符串")
-    parser.add_argument("--max-results", "-n", type=int, default=20)
+    parser.add_argument("--max-results", "-n", type=int, default=20,
+                        help="返回总量 (默认 20，四源均分)")
+    parser.add_argument("--year", "-y", type=int, default=None,
+                        help="发表年份过滤 (如 2023)")
+    parser.add_argument("--article-type", "-t", type=str, default=None,
+                        help="文章类型过滤 (如 rct, meta-analysis, review)")
     parser.add_argument("--output", "-o", type=str, default=None, help="输出 JSON 文件")
     parser.add_argument("--csv", type=str, default=None, help="同时输出 CSV 文件路径")
     parser.add_argument("--no-full-text", action="store_true", help="跳过全文/图片获取")
@@ -1423,6 +1559,8 @@ async def main():
         max_results=args.max_results,
         fetch_full_text=not args.no_full_text,
         verbose=args.verbose,
+        year=args.year,
+        article_type=args.article_type,
     )
 
     try:
